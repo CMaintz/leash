@@ -94,6 +94,23 @@ Jev is about 68% accurate, so Leash is advisory: it never blocks a commit or fai
 build. It says which rule and how likely, never why or how many; the agent supplies the
 fix. Text-only, so it judges per file and chunks large diffs.
 
+## Contributing
+
+Plain npm, no special tooling:
+
+```
+npm install
+npm run lint        # eslint + prettier
+npm run typecheck   # tsc --strict
+npm test            # vitest
+npm run build
+```
+
+The maintainer additionally runs a [Foundry](https://github.com/CMaintz/foundry)
+quality gate (mise verbs + habit-hooks structural smells); the committed `mise.toml`
+and `.habit-hooks/` support that. Neither is required to build, test, or contribute -
+they are an optional overlay, and habit-hooks never needs to be installed to use Leash.
+
 ## License
 
 MIT.
