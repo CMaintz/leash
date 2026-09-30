@@ -72,8 +72,16 @@ optional `scope` and `source` (the instruction-file line it came from):
 Leash runs as two Claude Code hooks: a `UserPromptSubmit` hook snapshots the working
 tree at the start of a turn, and a `Stop` hook checks what that turn changed and, on a
 repair-band break, blocks the stop and hands the agent the exact rules to fix so it
-repairs them in the same turn. An automated `leash init` is coming; until then, wire it
-in `.claude/settings.json`:
+repairs them in the same turn. Install both in one command:
+
+```
+leash init              # writes the hooks into ~/.claude/settings.json (idempotent)
+leash init --project    # or into this repo's .claude/settings.json
+leash uninstall         # removes them again
+```
+
+`init` merges into whatever is already there and never duplicates. Under the hood it
+adds the two hooks to `.claude/settings.json`:
 
 ```json
 {

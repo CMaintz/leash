@@ -16,6 +16,8 @@ export {
 } from './engine.js';
 export { readHookInput, stopDecision } from './hook.js';
 export type { StopDecision, StopHookInput } from './hook.js';
+export { addLeashHooks, removeLeashHooks } from './install.js';
+export type { ClaudeSettings } from './install.js';
 export { parseRubric } from './schema.js';
 export type { Baseline, Band, Finding, Phase, Rubric, Rule } from './schema.js';
 export { postJson, providerFromEnv, TypeSafeProvider } from './provider.js';

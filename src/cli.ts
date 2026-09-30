@@ -9,6 +9,7 @@ import { checkTurn } from './check.js';
 import { parseDiff } from './diff.js';
 import { baselineFrom } from './engine.js';
 import { readHookInput, stopDecision } from './hook.js';
+import { addLeashHooks, loadSettings, removeLeashHooks, saveSettings, settingsPath } from './install.js';
 import { providerFromEnv } from './provider.js';
 import { parseRubric, type Finding, type Rubric } from './schema.js';
 
@@ -24,8 +25,10 @@ async function main(): Promise<void> {
     report: () => report(),
     snapshot: () => snapshot(),
     hook: () => hook(),
+    init: () => install(arg === '--project'),
+    uninstall: () => uninstallHooks(arg === '--project'),
     version: () => console.log('leash 0.1.0'),
-    help: () => console.log('leash <check|audit|report|snapshot|hook> [baseRef]'),
+    help: () => console.log('leash <check|audit|report|init|uninstall> [--project]'),
   };
   await (commands[command] ?? commands.help)!();
 }
@@ -66,6 +69,19 @@ async function hook(): Promise<void> {
   const { actionable } = await checkTurn(provider, rubric, parseDiff(gitDiff(turnBase())), loadBaseline());
   const decision = stopDecision(actionable);
   if (decision.decision) console.log(JSON.stringify(decision));
+}
+
+// Install the Stop + UserPromptSubmit hooks into a Claude Code settings.json.
+function install(project: boolean): void {
+  const path = settingsPath(project);
+  saveSettings(path, addLeashHooks(loadSettings(path)));
+  console.log(`leash: installed snapshot + hook into ${path}`);
+}
+
+function uninstallHooks(project: boolean): void {
+  const path = settingsPath(project);
+  saveSettings(path, removeLeashHooks(loadSettings(path)));
+  console.log(`leash: removed hooks from ${path}`);
 }
 
 function report(): void {
