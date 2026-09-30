@@ -67,6 +67,28 @@ optional `scope` and `source` (the instruction-file line it came from):
 }
 ```
 
+## Claude Code (turn hook)
+
+Leash runs as two Claude Code hooks: a `UserPromptSubmit` hook snapshots the working
+tree at the start of a turn, and a `Stop` hook checks what that turn changed and, on a
+repair-band break, blocks the stop and hands the agent the exact rules to fix so it
+repairs them in the same turn. An automated `leash init` is coming; until then, wire it
+in `.claude/settings.json`:
+
+```json
+{
+  "hooks": {
+    "UserPromptSubmit": [{ "hooks": [{ "type": "command", "command": "leash snapshot" }] }],
+    "Stop": [{ "hooks": [{ "type": "command", "command": "leash hook" }] }]
+  }
+}
+```
+
+`leash snapshot` records the pre-turn state; `leash hook` reads the Stop payload, diffs
+against that snapshot, and prints `{"decision":"block","reason":...}` only when a turn
+newly breaks a repair-band rule. No key or no rubric means it stays silent and lets the
+agent stop (fail open).
+
 ## Library
 
 Leash is library-first; the CLI and the coming agent hooks are thin wrappers over the

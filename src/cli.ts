@@ -8,11 +8,13 @@ import { existsSync, mkdirSync, readFileSync, writeFileSync } from 'node:fs';
 import { checkTurn } from './check.js';
 import { parseDiff } from './diff.js';
 import { baselineFrom } from './engine.js';
+import { readHookInput, stopDecision } from './hook.js';
 import { providerFromEnv } from './provider.js';
 import { parseRubric, type Finding, type Rubric } from './schema.js';
 
 const RUBRIC_PATH = '.leash/rubric.json';
 const BASELINE_PATH = '.leash/baseline.json';
+const TURN_BASE_PATH = '.leash/turn-base';
 
 async function main(): Promise<void> {
   const [command = 'help', arg] = process.argv.slice(2);
@@ -20,8 +22,10 @@ async function main(): Promise<void> {
     check: () => check(arg),
     audit: () => audit(arg),
     report: () => report(),
+    snapshot: () => snapshot(),
+    hook: () => hook(),
     version: () => console.log('leash 0.1.0'),
-    help: () => console.log('leash <check|audit|report> [baseRef]'),
+    help: () => console.log('leash <check|audit|report|snapshot|hook> [baseRef]'),
   };
   await (commands[command] ?? commands.help)!();
 }
@@ -42,6 +46,26 @@ async function audit(baseRef = 'HEAD'): Promise<void> {
   const { findings } = await checkTurn(provider, rubric, parseDiff(gitDiff(baseRef)), []);
   writeJson(BASELINE_PATH, baselineFrom(findings));
   console.log(`leash: accepted ${findings.length} finding(s) into ${BASELINE_PATH}`);
+}
+
+// UserPromptSubmit hook: snapshot the working tree so the Stop hook can diff just
+// this turn's changes. `git stash create` records index + working tree without
+// touching them; empty output means nothing uncommitted, so fall back to HEAD.
+function snapshot(): void {
+  const ref = execSync('git stash create', { encoding: 'utf8' }).trim() || 'HEAD';
+  mkdirSync('.leash', { recursive: true });
+  writeFileSync(TURN_BASE_PATH, `${ref}\n`);
+}
+
+// Stop hook: check what changed since the snapshot; block only on repair-band breaks.
+async function hook(): Promise<void> {
+  await readHookInput(); // consume the payload; the hook already runs in cwd
+  const rubric = loadRubric();
+  const provider = providerFromEnv();
+  if (!rubric || !provider) return; // fail open, silent: allow the stop
+  const { actionable } = await checkTurn(provider, rubric, parseDiff(gitDiff(turnBase())), loadBaseline());
+  const decision = stopDecision(actionable);
+  if (decision.decision) console.log(JSON.stringify(decision));
 }
 
 function report(): void {
@@ -67,6 +91,11 @@ function skip(rubric: Rubric | null, provider: unknown): void {
 
 function gitDiff(baseRef: string): string {
   return execSync(`git diff ${baseRef}`, { encoding: 'utf8', maxBuffer: 32 * 1024 * 1024 });
+}
+
+function turnBase(): string {
+  if (!existsSync(TURN_BASE_PATH)) return 'HEAD';
+  return readFileSync(TURN_BASE_PATH, 'utf8').trim() || 'HEAD';
 }
 
 function loadRubric(): Rubric | null {

@@ -14,6 +14,8 @@ export {
   questionsForFile,
   rulesForFile,
 } from './engine.js';
+export { readHookInput, stopDecision } from './hook.js';
+export type { StopDecision, StopHookInput } from './hook.js';
 export { parseRubric } from './schema.js';
 export type { Baseline, Band, Finding, Phase, Rubric, Rule } from './schema.js';
 export { postJson, providerFromEnv, TypeSafeProvider } from './provider.js';
