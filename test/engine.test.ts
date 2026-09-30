@@ -1,0 +1,76 @@
+import { describe, expect, it } from 'vitest';
+import {
+  bandFor,
+  baselineFrom,
+  fingerprint,
+  findingsForFile,
+  newFindings,
+  questionsForFile,
+  rulesForFile,
+} from '../src/engine.js';
+import type { Answer } from '../src/provider.js';
+import type { Rubric, Rule } from '../src/schema.js';
+
+const rule = (over: Partial<Rule> = {}): Rule => ({
+  id: 'r',
+  question: 'broken?',
+  phase: 'turn',
+  scope: [],
+  repairAt: 0.8,
+  noteAt: 0.5,
+  ...over,
+});
+
+const rubric: Rubric = {
+  version: 1,
+  rules: [rule({ id: 'no-premature-abstraction', scope: ['src/**/*.ts'] }), rule({ id: 'small-functions', scope: [] })],
+};
+
+const noul = (n: number): Answer => ({ type: 'noul', noul: n });
+
+describe('scope', () => {
+  it('empty scope matches every file; a glob filters', () => {
+    expect(Object.keys(questionsForFile(rubric, 'src/a.ts')).sort()).toEqual([
+      'no-premature-abstraction',
+      'small-functions',
+    ]);
+    expect(Object.keys(questionsForFile(rubric, 'README.md'))).toEqual(['small-functions']);
+  });
+
+  it('** matches both nested and top-level paths', () => {
+    expect(rulesForFile(rubric, 'src/x/y.ts').map((r) => r.id)).toContain('no-premature-abstraction');
+    expect(rulesForFile(rubric, 'src/a.ts').map((r) => r.id)).toContain('no-premature-abstraction');
+  });
+});
+
+describe('banding', () => {
+  it('applies repair/note/off thresholds', () => {
+    const r = rule();
+    expect(bandFor(r, 0.9)).toBe('repair');
+    expect(bandFor(r, 0.6)).toBe('note');
+    expect(bandFor(r, 0.3)).toBe('off');
+  });
+});
+
+describe('findings and ratchet', () => {
+  it('builds findings and drops the off band', () => {
+    const answers: Record<string, Answer> = { 'no-premature-abstraction': noul(0.9), 'small-functions': noul(0.3) };
+    const findings = findingsForFile(rubric, 'src/a.ts', answers);
+    expect(findings).toHaveLength(1);
+    expect(findings[0]!.ruleId).toBe('no-premature-abstraction');
+    expect(findings[0]!.band).toBe('repair');
+  });
+
+  it('ratchets baselined fingerprints out of the new set', () => {
+    const findings = findingsForFile(rubric, 'src/a.ts', { 'small-functions': noul(0.9) });
+    expect(fingerprint(findings[0]!)).toBe('small-functions::src/a.ts');
+    expect(newFindings(findings, ['small-functions::src/a.ts'])).toHaveLength(0);
+    expect(newFindings(findings, [])).toHaveLength(1);
+  });
+
+  it('baselineFrom is sorted and de-duplicated', () => {
+    const answers: Record<string, Answer> = { 'no-premature-abstraction': noul(0.9), 'small-functions': noul(0.9) };
+    const findings = findingsForFile(rubric, 'src/a.ts', answers);
+    expect(baselineFrom(findings)).toEqual(['no-premature-abstraction::src/a.ts', 'small-functions::src/a.ts']);
+  });
+});

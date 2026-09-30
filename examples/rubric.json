@@ -1,0 +1,37 @@
+{
+  "version": 1,
+  "rules": [
+    {
+      "id": "no-premature-abstraction",
+      "question": "Does this change add an abstraction (interface, wrapper, base class, factory) that is used in only one place?",
+      "phase": "turn",
+      "scope": ["src/**/*.ts"],
+      "repairAt": 0.8,
+      "noteAt": 0.55
+    },
+    {
+      "id": "single-purpose-functions",
+      "question": "Does any function introduced or changed here do more than one distinct thing (a name that would need 'and')?",
+      "phase": "turn",
+      "scope": ["src/**/*.ts"],
+      "repairAt": 0.8,
+      "noteAt": 0.55
+    },
+    {
+      "id": "no-raw-errors-to-users",
+      "question": "Does this let a raw error, stack trace, or exception message reach an end user instead of a handled, friendly message?",
+      "phase": "turn",
+      "scope": ["src/**/*.ts"],
+      "repairAt": 0.8,
+      "noteAt": 0.5
+    },
+    {
+      "id": "added-only-what-was-asked",
+      "question": "Does this turn add functionality, options, or files beyond what the task asked for?",
+      "phase": "turn",
+      "scope": [],
+      "repairAt": 0.85,
+      "noteAt": 0.6
+    }
+  ]
+}
