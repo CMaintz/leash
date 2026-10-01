@@ -74,3 +74,22 @@ describe('findings and ratchet', () => {
     expect(baselineFrom(findings)).toEqual(['no-premature-abstraction::src/a.ts', 'small-functions::src/a.ts']);
   });
 });
+
+describe('edit phase', () => {
+  const mixed: Rubric = {
+    version: 1,
+    rules: [rule({ id: 'turn-rule', phase: 'turn' }), rule({ id: 'edit-rule', phase: 'edit', scope: ['src/**/*.ts'] })],
+  };
+
+  it('selects only edit-phase rules in scope', () => {
+    expect(Object.keys(questionsForFile(mixed, 'src/a.ts', 'edit'))).toEqual(['edit-rule']);
+    expect(Object.keys(questionsForFile(mixed, 'README.md', 'edit'))).toEqual([]);
+  });
+
+  it('bands edit-phase answers and ignores turn rules', () => {
+    const answers: Record<string, Answer> = { 'edit-rule': noul(0.9), 'turn-rule': noul(0.9) };
+    const findings = findingsForFile(mixed, 'src/a.ts', answers, 'edit');
+    expect(findings).toHaveLength(1);
+    expect(findings[0]!.ruleId).toBe('edit-rule');
+  });
+});

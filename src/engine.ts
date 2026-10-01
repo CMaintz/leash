@@ -3,7 +3,7 @@
 // NOT already accepted count as new. Existing debt is silent; the baseline only shrinks.
 
 import type { Answer, Question } from './provider.js';
-import type { Band, Finding, Rubric, Rule } from './schema.js';
+import type { Band, Finding, Phase, Rubric, Rule } from './schema.js';
 
 /** Turn-phase rules that apply to `file`. Rules deferred to a deterministic tool
  * (`handledBy`) are skipped: that is the deterministic-first split. */
@@ -32,9 +32,14 @@ export function bandFor(rule: Rule, probability: number): Band {
 }
 
 /** Turn Jev's answers for one file into findings (drops `off` band). */
-export function findingsForFile(rubric: Rubric, file: string, answers: Record<string, Answer>): Finding[] {
+export function findingsForFile(
+  rubric: Rubric,
+  file: string,
+  answers: Record<string, Answer>,
+  phase: Phase = 'turn',
+): Finding[] {
   const findings: Finding[] = [];
-  for (const rule of rulesForFile(rubric, file)) {
+  for (const rule of rulesForFile(rubric, file, phase)) {
     const probability = noulOf(answers[rule.id]);
     if (probability === null) continue;
     const band = bandFor(rule, probability);

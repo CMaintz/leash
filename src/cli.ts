@@ -5,10 +5,11 @@
 
 import { execSync } from 'node:child_process';
 import { existsSync, mkdirSync, readFileSync, writeFileSync } from 'node:fs';
+import { calibrationReport, tallyFires, type RuleCalibration } from './calibrate.js';
 import { checkTurn } from './check.js';
 import { summarize, type CompileSummary } from './compile.js';
-import { parseDiff } from './diff.js';
-import { baselineFrom } from './engine.js';
+import { parseDiff, type FileDiff } from './diff.js';
+import { baselineFrom, findingsForFile, questionsForFile } from './engine.js';
 import { rubricDrift } from './guard.js';
 import { readHookInput, stopDecision } from './hook.js';
 import { addLeashHooks, loadSettings, removeLeashHooks, saveSettings, settingsPath } from './install.js';
@@ -27,12 +28,14 @@ async function main(): Promise<void> {
     report: () => report(),
     compile: () => compile(),
     guard: () => guard(arg),
+    calibrate: () => calibrate(),
+    'edit-check': () => editCheck(arg),
     snapshot: () => snapshot(),
     hook: () => hook(),
     init: () => install(arg === '--project'),
     uninstall: () => uninstallHooks(arg === '--project'),
     version: () => console.log('leash 0.1.0'),
-    help: () => console.log('leash <check|audit|report|compile|guard|init|uninstall> [arg]'),
+    help: () => console.log('leash <check|audit|report|compile|guard|calibrate|edit-check|init|uninstall> [arg]'),
   };
   await (commands[command] ?? commands.help)!();
 }
@@ -130,6 +133,57 @@ function guard(baseRef = 'HEAD'): void {
   console.error('leash: rubric loosened (needs review):');
   for (const line of loosened) console.error(`  - ${line}`);
   process.exitCode = 1;
+}
+
+// Score each turn-phase rule against the last N commits (default 20) and flag the
+// ones that never fire. Advisory, exit 0; no key => fail-open skip.
+async function calibrate(): Promise<void> {
+  const rubric = loadRubric();
+  const provider = providerFromEnv();
+  if (!rubric || !provider) return skip(rubric, provider);
+  const commits = commitDiffs(sampleSize());
+  const report = calibrationReport(await tallyFires(provider, rubric, commits), commits.length);
+  printCalibration(report, commits.length);
+}
+
+// Opt-in edit-phase check for one file's working-tree diff. Advisory, exit 0.
+async function editCheck(file?: string): Promise<void> {
+  if (!file) return void console.log('usage: leash edit-check <file>');
+  const rubric = loadRubric();
+  const provider = providerFromEnv();
+  if (!rubric || !provider) return skip(rubric, provider);
+  const questions = questionsForFile(rubric, file, 'edit');
+  if (Object.keys(questions).length === 0) return void console.log(`leash: no edit-phase rules for ${file}.`);
+  const { answers } = await provider.evaluate({ state: { file, diff: gitDiff(`HEAD -- ${file}`) }, questions });
+  printFindings(findingsForFile(rubric, file, answers, 'edit'));
+}
+
+// Diff of each of the last `sample` commits, parsed into per-file patches.
+function commitDiffs(sample: number): FileDiff[][] {
+  const log = execSync(`git log -n ${sample} --format=%H`, { encoding: 'utf8' });
+  const shas = log.trim().split('\n').filter(Boolean);
+  return shas.map((sha) =>
+    parseDiff(execSync(`git show ${sha} --format=`, { encoding: 'utf8', maxBuffer: 32 * 1024 * 1024 })),
+  );
+}
+
+// `--sample N` or a bare N after the command; defaults to 20.
+function sampleSize(): number {
+  const args = process.argv.slice(3);
+  const flagged = args.indexOf('--sample');
+  const raw = flagged >= 0 ? args[flagged + 1] : args[0];
+  const n = Number(raw);
+  return Number.isFinite(n) && n > 0 ? Math.floor(n) : 20;
+}
+
+function printCalibration(report: RuleCalibration[], sample: number): void {
+  if (report.length === 0) return void console.log('leash: no active turn-phase rules to calibrate.');
+  console.log(`leash: calibrated ${report.length} rule(s) over ${sample} commit(s).`);
+  for (const r of [...report].sort((a, b) => a.rate - b.rate)) {
+    console.log(`  ${r.dead ? 'DEAD' : '    '} ${r.rule}: ${r.fires}/${sample} (${Math.round(r.rate * 100)}%)`);
+  }
+  const dead = report.filter((r) => r.dead).map((r) => r.rule);
+  if (dead.length) console.log(`\nleash: ${dead.length} rule(s) never fired - reword or remove: ${dead.join(', ')}`);
 }
 
 function printFindings(findings: Finding[]): void {

@@ -1,6 +1,8 @@
 // Leash public API. Library-first: the CLI and the agent hooks are thin wrappers
 // over exactly these exports, so a host (like Foundry) can drive the same core.
 
+export { calibrationReport, tallyFires } from './calibrate.js';
+export type { RuleCalibration } from './calibrate.js';
 export { checkTurn } from './check.js';
 export type { CheckResult } from './check.js';
 export { summarize } from './compile.js';

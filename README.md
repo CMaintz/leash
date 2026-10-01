@@ -45,7 +45,14 @@ leash compile             # validate the rubric, show the active vs deferred spl
 leash audit               # accept the current diff's findings into the baseline
 leash check [baseRef]     # print what this turn newly broke (default base: HEAD)
 leash guard [baseRef]     # fail if the rubric was loosened vs baseRef (for CI)
+leash calibrate [N]       # score rules against the last N commits (default 20); flag dead ones
+leash edit-check <file>   # opt-in per-edit check of one file (see below)
 ```
+
+`leash calibrate` runs each active turn-phase rule over the diffs of the last N commits
+(`--sample N` or a bare `N`, default 20) and reports how often each actually fires. A rule
+that never fires is flagged as a dead-rule candidate to reword or remove, so the rubric
+stays honest. Advisory and fail-open: no key just prints a skip.
 
 You do not hand-write the rubric from scratch: your coding agent compiles it from your
 `CLAUDE.md` / `AGENTS.md` (no second model involved - see [docs/COMPILE.md](docs/COMPILE.md)),
@@ -104,6 +111,27 @@ adds the two hooks to `.claude/settings.json`:
 against that snapshot, and prints `{"decision":"block","reason":...}` only when a turn
 newly breaks a repair-band rule. No key or no rubric means it stays silent and lets the
 agent stop (fail open).
+
+### Opt-in: per-edit checks (off by default)
+
+For rules with `"phase": "edit"`, `leash edit-check <file>` judges a single file right
+after it is written. It is deliberately **not** installed by `leash init`, because at
+Jev's edit-level precision a per-edit auto-repair loop risks the agent chasing phantoms -
+turn checks are the default for a reason. If you want it anyway, wire it yourself as a
+`PostToolUse` hook (it stays silent without a key or edit-phase rules):
+
+```json
+{
+  "hooks": {
+    "PostToolUse": [
+      {
+        "matcher": "Edit|Write|MultiEdit",
+        "hooks": [{ "type": "command", "command": "leash edit-check \"$CLAUDE_FILE_PATH\"" }]
+      }
+    ]
+  }
+}
+```
 
 ## Library
 
