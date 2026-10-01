@@ -5,9 +5,10 @@
 import type { Answer, Question } from './provider.js';
 import type { Band, Finding, Rubric, Rule } from './schema.js';
 
-/** Turn-phase rules that apply to `file`. */
+/** Turn-phase rules that apply to `file`. Rules deferred to a deterministic tool
+ * (`handledBy`) are skipped: that is the deterministic-first split. */
 export function rulesForFile(rubric: Rubric, file: string, phase: 'turn' | 'edit' = 'turn'): Rule[] {
-  return rubric.rules.filter((rule) => rule.phase === phase && inScope(rule.scope, file));
+  return rubric.rules.filter((rule) => rule.phase === phase && !rule.handledBy && inScope(rule.scope, file));
 }
 
 /** One Noul question per applicable rule, keyed by rule id (batched in a single call). */

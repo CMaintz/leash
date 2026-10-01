@@ -6,8 +6,10 @@
 import { execSync } from 'node:child_process';
 import { existsSync, mkdirSync, readFileSync, writeFileSync } from 'node:fs';
 import { checkTurn } from './check.js';
+import { summarize, type CompileSummary } from './compile.js';
 import { parseDiff } from './diff.js';
 import { baselineFrom } from './engine.js';
+import { rubricDrift } from './guard.js';
 import { readHookInput, stopDecision } from './hook.js';
 import { addLeashHooks, loadSettings, removeLeashHooks, saveSettings, settingsPath } from './install.js';
 import { providerFromEnv } from './provider.js';
@@ -23,12 +25,14 @@ async function main(): Promise<void> {
     check: () => check(arg),
     audit: () => audit(arg),
     report: () => report(),
+    compile: () => compile(),
+    guard: () => guard(arg),
     snapshot: () => snapshot(),
     hook: () => hook(),
     init: () => install(arg === '--project'),
     uninstall: () => uninstallHooks(arg === '--project'),
     version: () => console.log('leash 0.1.0'),
-    help: () => console.log('leash <check|audit|report|init|uninstall> [--project]'),
+    help: () => console.log('leash <check|audit|report|compile|guard|init|uninstall> [arg]'),
   };
   await (commands[command] ?? commands.help)!();
 }
@@ -93,6 +97,41 @@ function report(): void {
   }
 }
 
+// Validate .leash/rubric.json and report the deterministic-first split. Exit 1 only
+// when the rubric is malformed (never throws to the advisory catch below).
+function compile(): void {
+  if (!existsSync(RUBRIC_PATH)) return void console.log(`leash: no rubric at ${RUBRIC_PATH}`);
+  let rubric: Rubric;
+  try {
+    rubric = parseRubric(JSON.parse(readFileSync(RUBRIC_PATH, 'utf8')));
+  } catch (err) {
+    console.error(`leash: invalid rubric - ${err instanceof Error ? err.message : String(err)}`);
+    process.exitCode = 1;
+    return;
+  }
+  printSummary(summarize(rubric));
+}
+
+function printSummary(s: CompileSummary): void {
+  console.log(
+    `leash: ${s.active} active rule(s) (turn ${s.byPhase.turn}, edit ${s.byPhase.edit}), ${s.deferred} deferred of ${s.total}.`,
+  );
+  for (const d of s.deferrals) console.log(`  deferred to ${d.handledBy}: ${d.id}`);
+}
+
+// Guard the rubric's integrity against a base ref: a loosening exits 1 for review.
+function guard(baseRef = 'HEAD'): void {
+  const current = tryLoadRubric();
+  if (!current) return void console.log(`leash: no usable rubric at ${RUBRIC_PATH} - nothing to guard.`);
+  const base = loadRubricAt(baseRef);
+  if (!base) return void console.log(`leash: no rubric at ${baseRef} - nothing to compare.`);
+  const { loosened } = rubricDrift(base, current);
+  if (loosened.length === 0) return void console.log('leash: rubric not loosened.');
+  console.error('leash: rubric loosened (needs review):');
+  for (const line of loosened) console.error(`  - ${line}`);
+  process.exitCode = 1;
+}
+
 function printFindings(findings: Finding[]): void {
   if (findings.length === 0) return void console.log('leash: no new rule breaks this turn.');
   const repairs = findings.filter((f) => f.band === 'repair');
@@ -117,6 +156,24 @@ function turnBase(): string {
 function loadRubric(): Rubric | null {
   if (!existsSync(RUBRIC_PATH)) return null;
   return parseRubric(JSON.parse(readFileSync(RUBRIC_PATH, 'utf8')));
+}
+
+function tryLoadRubric(): Rubric | null {
+  try {
+    return loadRubric();
+  } catch {
+    return null;
+  }
+}
+
+// The rubric as of a git ref, or null if absent/unreadable there (guard then no-ops).
+function loadRubricAt(ref: string): Rubric | null {
+  try {
+    const text = execSync(`git show ${ref}:${RUBRIC_PATH}`, { encoding: 'utf8', stdio: ['pipe', 'pipe', 'ignore'] });
+    return parseRubric(JSON.parse(text));
+  } catch {
+    return null;
+  }
 }
 
 function loadBaseline(): string[] {

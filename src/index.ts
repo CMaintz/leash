@@ -3,6 +3,10 @@
 
 export { checkTurn } from './check.js';
 export type { CheckResult } from './check.js';
+export { summarize } from './compile.js';
+export type { CompileSummary, Deferral } from './compile.js';
+export { rubricDrift } from './guard.js';
+export type { RubricDrift } from './guard.js';
 export { parseDiff } from './diff.js';
 export type { FileDiff } from './diff.js';
 export {

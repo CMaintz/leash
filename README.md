@@ -42,13 +42,22 @@ mock). No key means Leash no-ops and lets the edit through, always.
 
 ```
 leash report              # list the rules in .leash/rubric.json
+leash compile             # validate the rubric, show the active vs deferred split
 leash audit               # accept the current diff's findings into the baseline
 leash check [baseRef]     # print what this turn newly broke (default base: HEAD)
+leash guard [baseRef]     # fail if the rubric was loosened vs baseRef (for CI)
 ```
+
+You do not hand-write the rubric from scratch: your coding agent compiles it from your
+`CLAUDE.md` / `AGENTS.md` (no second model involved - see [docs/COMPILE.md](docs/COMPILE.md)),
+then `leash compile` validates it. Rules a linter or the gate already enforce are marked
+`handledBy` and skipped (deterministic-first), so Jev is spent only where nothing else
+can decide. `leash guard` makes any later weakening of the rubric a red, reviewable check.
 
 A rubric is a committed, readable `.leash/rubric.json`. Each rule is one narrow yes/no
 question, phrased so a break reads as `true`, with a `repairAt` / `noteAt` band and an
-optional `scope` and `source` (the instruction-file line it came from):
+optional `scope`, `source` (the instruction-file line it came from), and `handledBy`
+(a deterministic tool that owns it instead):
 
 ```json
 {

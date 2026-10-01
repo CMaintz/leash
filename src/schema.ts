@@ -21,6 +21,8 @@ export interface Rule {
   noteAt: number;
   /** provenance: the instruction file + line this was compiled from. */
   source?: string;
+  /** deterministic-first: a tool that already enforces this (e.g. "eslint"). Set means Jev skips it. */
+  handledBy?: string;
 }
 
 export interface Rubric {
@@ -63,6 +65,7 @@ function normalizeRule(raw: unknown, index: number): Rule {
     repairAt: numberOr(raw.repairAt, DEFAULTS.repairAt),
     noteAt: numberOr(raw.noteAt, DEFAULTS.noteAt),
     ...(typeof raw.source === 'string' ? { source: raw.source } : {}),
+    ...(typeof raw.handledBy === 'string' ? { handledBy: raw.handledBy } : {}),
   };
 }
 
