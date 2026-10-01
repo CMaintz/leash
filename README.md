@@ -5,9 +5,8 @@ against your project's un-lintable rules using [Jev](https://typesafe.ai) (TypeS
 System One decision model), and tells the agent exactly which rule it broke so it
 fixes it before moving on. About 300 ms and a fraction of a cent per turn.
 
-> Jev-powered. Early (v0.1): the offline core (rubric, engine, ratchet, CLI). Agent
-> hooks land next. Inspired by [Abide](https://www.npmjs.com/package/@coldtea/abide);
-> the difference is the ratchet (below).
+> Jev-powered. Inspired by [Abide](https://www.npmjs.com/package/@coldtea/abide); the
+> difference is the ratchet (below) and deterministic-first rule compilation.
 
 ## Why
 
@@ -108,8 +107,8 @@ agent stop (fail open).
 
 ## Library
 
-Leash is library-first; the CLI and the coming agent hooks are thin wrappers over the
-same exports, so a host can drive the core directly:
+Leash is library-first; the CLI and the agent hooks are thin wrappers over the same
+exports, so a host can drive the core directly:
 
 ```ts
 import { checkTurn, parseDiff, parseRubric, providerFromEnv } from 'leash';
