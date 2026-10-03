@@ -146,12 +146,14 @@ leash init --codex --project     # or this repo's .codex/hooks.json
 leash uninstall --codex
 ```
 
-It writes the same `snapshot` + `hook` pair. Leash also reads Codex's `stop_hook_active`
+It writes the same `snapshot` + `hook` pair. Codex loads hooks straight from that
+`hooks.json` (no separate enable flag), so `leash init --codex` is all it takes; a
+project-local `.codex/` must be trusted first. Leash reads Codex's `stop_hook_active`
 flag and will not re-block a turn Codex has already nudged once, so there is no loop.
-
-Caveats specific to Codex: its hook system is experimental (opt-in, Codex v0.114+), is
-not available on Windows, and a project-local `.codex/` must be trusted before its hooks
-load. No key or no rubric still means silent fail-open, exactly as on Claude Code.
+The contract is checked against Codex's own generated schemas (`stop.command.input` /
+`stop.command.output`): the `Stop` input carries `cwd` + `stop_hook_active`, and a
+`{"decision":"block","reason":...}` reply forces continuation, same as Claude Code. No
+key or no rubric still means silent fail-open.
 
 ### OpenCode
 
