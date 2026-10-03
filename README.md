@@ -133,6 +133,35 @@ turn checks are the default for a reason. If you want it anyway, wire it yoursel
 }
 ```
 
+## Codex (turn hook)
+
+Codex's hook system is the same contract as Claude Code's - the same `hooks.json`
+shape, the same no-matcher `Stop` and `UserPromptSubmit` events, and the same
+`{"decision":"block","reason":...}` output (Codex injects `reason` as the next user
+message) - so the same two hooks drive it. Install with `--codex`:
+
+```
+leash init --codex               # writes ~/.codex/hooks.json
+leash init --codex --project     # or this repo's .codex/hooks.json
+leash uninstall --codex
+```
+
+It writes the same `snapshot` + `hook` pair. Leash also reads Codex's `stop_hook_active`
+flag and will not re-block a turn Codex has already nudged once, so there is no loop.
+
+Caveats specific to Codex: its hook system is experimental (opt-in, Codex v0.114+), is
+not available on Windows, and a project-local `.codex/` must be trusted before its hooks
+load. No key or no rubric still means silent fail-open, exactly as on Claude Code.
+
+### OpenCode
+
+Not yet wired, on purpose. OpenCode's plugin hooks return `void` and have no same-turn
+"block the stop and keep working" primitive the way Claude Code and Codex do; the only
+levers are a hard `tool.execute.before` block (that is jev-guard's job, not Leash's
+advisory turn coaching) or re-prompting the session through the SDK on `session.idle`
+(loop-prone, and a different product). Rather than ship a guessed, lesser adapter, Leash
+waits for a clean fit. The library core is host-agnostic, so adding one later is small.
+
 ## Library
 
 Leash is library-first; the CLI and the agent hooks are thin wrappers over the same
