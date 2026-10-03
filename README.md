@@ -31,7 +31,7 @@ Jev's edit-level precision, per-edit auto-repair risks the agent chasing phantom
 ## Install
 
 ```
-npm install -g leash   # or: npx leash <command>
+npm install -g @cmaintz/leash   # or: npx @cmaintz/leash <command>
 ```
 
 Set a key: `export JEV_API_KEY=...` (or `TYPESAFE_AI_BASE_URL` for a self-host / proxy /
@@ -139,7 +139,7 @@ Leash is library-first; the CLI and the agent hooks are thin wrappers over the s
 exports, so a host can drive the core directly:
 
 ```ts
-import { checkTurn, parseDiff, parseRubric, providerFromEnv } from 'leash';
+import { checkTurn, parseDiff, parseRubric, providerFromEnv } from '@cmaintz/leash';
 
 const provider = providerFromEnv();
 if (provider) {
