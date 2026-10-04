@@ -4,6 +4,13 @@ All notable changes to this project are documented here. Format: [Keep a Changel
 
 ## [Unreleased]
 
+## [0.9.1] - 2026-10-04
+
+### Fixed
+
+- **Stop hook: repairs are verified again, and nothing can loop.** Since 0.5 the Stop hook returned early whenever `stop_hook_active` was set, on the belief that only Codex sends it. Claude Code sends it too (true once any Stop hook has forced a continuation), so after a single block the agent's repair was never re-checked, and a continuation forced by a *different* Stop hook skipped Leash entirely. Now every Stop is checked, but each finding blocks at most once per turn: a per-turn block record (fingerprints, in the git dir, reset by the next snapshot) is subtracted before deciding. A finding Jev keeps reporting cannot loop; a new break introduced while repairing is still caught. New export `stopDecisionOnce`, plus `readBlocked` / `recordBlocked`.
+- README: documents that building a snapshot hashes untracked, non-ignored files into `.git/objects` (as `git add` would; nothing is committed and `git gc` prunes them).
+
 ### Changed
 
 - Leash dogfoods itself: a committed `.leash/rubric.json` (fail-open, single-purpose functions, no premature abstraction, no silent error swallowing; line length deferred to eslint) guarded on every PR by a new `leash-guard` workflow.
@@ -80,7 +87,8 @@ First versioned release. Everything below shipped as internal milestones v0.1 to
 - Package renamed to `@cmaintz/leash`: the unscoped `leash` name is taken on npm. The `leash` binary is unchanged.
 - `leash version` now reads the version from `package.json` instead of a hardcoded string, so it cannot drift.
 
-[Unreleased]: https://github.com/CMaintz/leash/compare/v0.9.0...HEAD
+[Unreleased]: https://github.com/CMaintz/leash/compare/v0.9.1...HEAD
+[0.9.1]: https://github.com/CMaintz/leash/compare/v0.9.0...v0.9.1
 [0.9.0]: https://github.com/CMaintz/leash/compare/v0.8.0...v0.9.0
 [0.8.0]: https://github.com/CMaintz/leash/compare/v0.7.0...v0.8.0
 [0.7.0]: https://github.com/CMaintz/leash/compare/v0.6.0...v0.7.0
