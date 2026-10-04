@@ -5,6 +5,7 @@
 
 import { execSync } from 'node:child_process';
 import { existsSync, mkdirSync, readFileSync, writeFileSync } from 'node:fs';
+import { createRequire } from 'node:module';
 import { calibrationReport, tallyFires, type RuleCalibration } from './calibrate.js';
 import { checkTurn } from './check.js';
 import { summarize, type CompileSummary } from './compile.js';
@@ -35,7 +36,7 @@ async function main(): Promise<void> {
     hook: () => hook(),
     init: () => install(hasFlag('--project'), hostFlag()),
     uninstall: () => uninstallHooks(hasFlag('--project'), hostFlag()),
-    version: () => console.log('leash 0.1.0'),
+    version: () => console.log(`leash ${packageVersion()}`),
     help: () =>
       console.log(
         'leash <check|audit|report|compile|guard|calibrate|edit-check|init|uninstall> [arg]\n' +
@@ -98,6 +99,12 @@ function uninstallHooks(project: boolean, host: Host): void {
   saveSettings(path, removeLeashHooks(loadSettings(path)));
   console.log(`leash: removed hooks from ${path}`);
   if (host === 'claude') console.log(`leash: removed /leash-rubric command at ${removeRubricCommand(project)}`);
+}
+
+// The version from package.json (always shipped), so the CLI can never drift from it.
+function packageVersion(): string {
+  const pkg = createRequire(import.meta.url)('../package.json') as { version?: string };
+  return pkg.version ?? 'unknown';
 }
 
 // Flags may appear in any order after the subcommand.

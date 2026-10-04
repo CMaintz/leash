@@ -4,6 +4,14 @@ All notable changes to this project are documented here. Format: [Keep a Changel
 
 ## [Unreleased]
 
+### Roadmap
+
+- OpenCode hook adapter (deferred: OpenCode's plugin hooks return `void`, with no same-turn block primitive; waiting for a clean fit rather than shipping a lesser adapter).
+
+## [0.6.0] - 2026-10-04
+
+First versioned release. Everything below shipped as internal milestones v0.1 to v0.6 while the package sat at 0.1.0; this release stamps them.
+
 ### Added
 
 - **v0.1:** the offline core of a Jev-powered, turn-level output-quality guardrail for coding agents.
@@ -21,7 +29,7 @@ All notable changes to this project are documented here. Format: [Keep a Changel
 ### Changed
 
 - Package renamed to `@cmaintz/leash`: the unscoped `leash` name is taken on npm. The `leash` binary is unchanged.
+- `leash version` now reads the version from `package.json` instead of a hardcoded string, so it cannot drift.
 
-### Roadmap
-
-- OpenCode hook adapter (deferred: OpenCode's plugin hooks return `void`, with no same-turn block primitive; waiting for a clean fit rather than shipping a lesser adapter).
+[Unreleased]: https://github.com/CMaintz/leash/compare/v0.6.0...HEAD
+[0.6.0]: https://github.com/CMaintz/leash/releases/tag/v0.6.0
