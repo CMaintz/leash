@@ -1,10 +1,21 @@
-// Install / uninstall the Leash hooks in a Claude Code settings.json. The pure
-// merge functions (addLeashHooks / removeLeashHooks) are idempotent and unit-tested;
-// the file helpers are the thin I/O around them.
+// Install / uninstall the Leash hooks in a host agent's config. Claude Code and
+// Codex share the exact hook contract - the same `{ hooks: { UserPromptSubmit, Stop } }`
+// object, the same `{ decision: "block", reason }` Stop output - so the pure merge
+// functions (addLeashHooks / removeLeashHooks) are host-agnostic; only the file they
+// live in differs (Claude Code's settings.json vs Codex's hooks.json). The merge
+// functions are idempotent and unit-tested; the file helpers are the thin I/O around them.
 
 import { existsSync, mkdirSync, readFileSync, writeFileSync } from 'node:fs';
 import { homedir } from 'node:os';
 import { dirname, join } from 'node:path';
+
+/** A supported host agent. Both consume the same hook object; only the path differs. */
+export type Host = 'claude' | 'codex';
+
+const HOST_CONFIG: Record<Host, { dir: string; file: string }> = {
+  claude: { dir: '.claude', file: 'settings.json' },
+  codex: { dir: '.codex', file: 'hooks.json' },
+};
 
 /** The two hooks Leash installs: snapshot at turn start, check at turn end. */
 const LEASH_HOOKS: Record<string, string> = {
@@ -49,9 +60,10 @@ export function removeLeashHooks(settings: ClaudeSettings): ClaudeSettings {
   return { ...settings, hooks };
 }
 
-/** Global (~/.claude) or project (.claude) settings path. */
-export function settingsPath(project: boolean): string {
-  return project ? join('.claude', 'settings.json') : join(homedir(), '.claude', 'settings.json');
+/** The host's hook-config path: project (in-repo) or global (home). */
+export function hostConfigPath(host: Host, project: boolean): string {
+  const { dir, file } = HOST_CONFIG[host];
+  return project ? join(dir, file) : join(homedir(), dir, file);
 }
 
 export function loadSettings(path: string): ClaudeSettings {

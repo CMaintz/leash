@@ -12,7 +12,7 @@ import { parseDiff, type FileDiff } from './diff.js';
 import { baselineFrom, findingsForFile, questionsForFile } from './engine.js';
 import { rubricDrift } from './guard.js';
 import { readHookInput, stopDecision } from './hook.js';
-import { addLeashHooks, loadSettings, removeLeashHooks, saveSettings, settingsPath } from './install.js';
+import { addLeashHooks, type Host, hostConfigPath, loadSettings, removeLeashHooks, saveSettings } from './install.js';
 import { providerFromEnv } from './provider.js';
 import { parseRubric, type Finding, type Rubric } from './schema.js';
 
@@ -32,10 +32,14 @@ async function main(): Promise<void> {
     'edit-check': () => editCheck(arg),
     snapshot: () => snapshot(),
     hook: () => hook(),
-    init: () => install(arg === '--project'),
-    uninstall: () => uninstallHooks(arg === '--project'),
+    init: () => install(hasFlag('--project'), hostFlag()),
+    uninstall: () => uninstallHooks(hasFlag('--project'), hostFlag()),
     version: () => console.log('leash 0.1.0'),
-    help: () => console.log('leash <check|audit|report|compile|guard|calibrate|edit-check|init|uninstall> [arg]'),
+    help: () =>
+      console.log(
+        'leash <check|audit|report|compile|guard|calibrate|edit-check|init|uninstall> [arg]\n' +
+          '  init/uninstall flags: --project (this repo, default global), --codex (Codex, default Claude Code)',
+      ),
   };
   await (commands[command] ?? commands.help)!();
 }
@@ -69,7 +73,8 @@ function snapshot(): void {
 
 // Stop hook: check what changed since the snapshot; block only on repair-band breaks.
 async function hook(): Promise<void> {
-  await readHookInput(); // consume the payload; the hook already runs in cwd
+  const input = await readHookInput(); // the hook already runs in cwd; we only read flags
+  if (input.stop_hook_active) return; // Codex already forced one continuation; don't re-block
   const rubric = loadRubric();
   const provider = providerFromEnv();
   if (!rubric || !provider) return; // fail open, silent: allow the stop
@@ -78,17 +83,26 @@ async function hook(): Promise<void> {
   if (decision.decision) console.log(JSON.stringify(decision));
 }
 
-// Install the Stop + UserPromptSubmit hooks into a Claude Code settings.json.
-function install(project: boolean): void {
-  const path = settingsPath(project);
+// Install the Stop + UserPromptSubmit hooks into the host's config (Claude Code or Codex).
+function install(project: boolean, host: Host): void {
+  const path = hostConfigPath(host, project);
   saveSettings(path, addLeashHooks(loadSettings(path)));
   console.log(`leash: installed snapshot + hook into ${path}`);
 }
 
-function uninstallHooks(project: boolean): void {
-  const path = settingsPath(project);
+function uninstallHooks(project: boolean, host: Host): void {
+  const path = hostConfigPath(host, project);
   saveSettings(path, removeLeashHooks(loadSettings(path)));
   console.log(`leash: removed hooks from ${path}`);
+}
+
+// Flags may appear in any order after the subcommand.
+function hasFlag(flag: string): boolean {
+  return process.argv.slice(3).includes(flag);
+}
+
+function hostFlag(): Host {
+  return hasFlag('--codex') ? 'codex' : 'claude';
 }
 
 function report(): void {

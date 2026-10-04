@@ -1,9 +1,14 @@
-// Claude Code Stop-hook glue. The pure part (stopDecision) turns actionable findings
-// into the exact JSON Claude Code expects; the runner reads the hook stdin and drives
-// the turn-check. Verified against the Claude Code hooks reference:
-//   Stop input on stdin includes cwd; a { decision: "block", reason } on stdout (exit 0)
-//   makes the agent keep working in the same turn. Claude caps consecutive blocks at 8,
-//   so no loop guard is needed here. Advisory: on any doubt we allow the stop.
+// Stop-hook glue, shared by Claude Code and Codex. The pure part (stopDecision) turns
+// actionable findings into the exact JSON both expect; the runner reads the hook stdin
+// and drives the turn-check. Checked against the Claude Code hooks reference and Codex's
+// own generated schemas (codex-rs/hooks/schema/generated/stop.command.{input,output}):
+//   Stop input on stdin includes cwd and stop_hook_active; a { decision: "block", reason }
+//   on stdout (exit 0) makes the agent keep working in the same turn (Codex injects
+//   `reason` as the next user message; Claude Code the same - Codex's schema even notes it
+//   mirrors Claude's "reason required when decision is block" rule). Claude caps consecutive
+//   blocks at 8; Codex sets `stop_hook_active` once it has already forced a continuation,
+//   which the runner honors so Leash never re-blocks an already-nudged turn. Advisory: on
+//   any doubt we allow the stop.
 
 import type { Finding } from './schema.js';
 
@@ -11,6 +16,8 @@ import type { Finding } from './schema.js';
 export interface StopHookInput {
   cwd?: string;
   hook_event_name?: string;
+  /** Codex: true once a Stop hook has already forced a continuation this turn. */
+  stop_hook_active?: boolean;
 }
 
 /** The Stop-hook decision. An empty object means "allow the agent to stop". */

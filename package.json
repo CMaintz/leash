@@ -1,6 +1,9 @@
 {
-  "name": "leash",
+  "name": "@cmaintz/leash",
   "version": "0.1.0",
+  "publishConfig": {
+    "access": "public"
+  },
   "description": "Jev-powered, real-time output-quality guardrail for coding agents. Keeps an agent's edits on a short leash: judges every turn against your un-lintable project rules and tells it which one it broke.",
   "license": "MIT",
   "author": "Christoffer Maintz",

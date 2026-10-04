@@ -1,5 +1,5 @@
 import { describe, expect, it } from 'vitest';
-import { addLeashHooks, removeLeashHooks, type ClaudeSettings } from '../src/install.js';
+import { addLeashHooks, hostConfigPath, removeLeashHooks, type ClaudeSettings } from '../src/install.js';
 
 describe('addLeashHooks', () => {
   it('adds both hooks to empty settings', () => {
@@ -21,6 +21,19 @@ describe('addLeashHooks', () => {
   it('keeps unrelated top-level settings', () => {
     const out = addLeashHooks({ model: 'sonnet' } as ClaudeSettings);
     expect(out.model).toBe('sonnet');
+  });
+});
+
+describe('hostConfigPath', () => {
+  it('maps each host to its project config file', () => {
+    expect(hostConfigPath('claude', true).replace(/\\/g, '/')).toBe('.claude/settings.json');
+    expect(hostConfigPath('codex', true).replace(/\\/g, '/')).toBe('.codex/hooks.json');
+  });
+
+  it('puts the global config under the home directory', () => {
+    const p = hostConfigPath('codex', false).replace(/\\/g, '/');
+    expect(p.endsWith('.codex/hooks.json')).toBe(true);
+    expect(p).not.toBe('.codex/hooks.json'); // absolute, under home
   });
 });
 
