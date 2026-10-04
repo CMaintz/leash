@@ -4,6 +4,22 @@ All notable changes to this project are documented here. Format: [Keep a Changel
 
 ## [Unreleased]
 
+## [0.9.0] - 2026-10-04
+
+### Fixed
+
+- **The per-edit check never actually worked.** The documented 0.4 recipe ran `leash edit-check "$CLAUDE_FILE_PATH"`, but Claude Code sets no such variable - the edited path arrives on stdin as `tool_input.file_path` - so the check always got an empty argument. And even with a path, its plain exit-0 output only reached Claude Code's debug log, never Claude.
+
+### Added
+
+- **`leash edit-hook`**: a real PostToolUse handler. It reads `tool_input.file_path` from the hook payload (absolute; mapped to a repo-relative path, silent for files outside the repo), checks that file's diff against edit-phase rules, subtracts the ratchet baseline, and returns repair-band breaks as `hookSpecificOutput.additionalContext` - advisory text Claude sees, never a block.
+- **`leash init --edit-phase`** wires it (PostToolUse, matcher `Edit|Write|MultiEdit`); `uninstall` removes it with the rest. Still off by default.
+- New exports: `editHookOutput`, `repoRelative`, `EditHookOutput`, `InstallOptions` (`addLeashHooks(settings, { editPhase })`).
+
+### Changed
+
+- `leash edit-check <file>` now subtracts the ratchet baseline and skips ignored files and `.leash/`, the same as the turn check.
+
 ## [0.8.0] - 2026-10-04
 
 ### Added
@@ -59,7 +75,8 @@ First versioned release. Everything below shipped as internal milestones v0.1 to
 - Package renamed to `@cmaintz/leash`: the unscoped `leash` name is taken on npm. The `leash` binary is unchanged.
 - `leash version` now reads the version from `package.json` instead of a hardcoded string, so it cannot drift.
 
-[Unreleased]: https://github.com/CMaintz/leash/compare/v0.8.0...HEAD
+[Unreleased]: https://github.com/CMaintz/leash/compare/v0.9.0...HEAD
+[0.9.0]: https://github.com/CMaintz/leash/compare/v0.8.0...v0.9.0
 [0.8.0]: https://github.com/CMaintz/leash/compare/v0.7.0...v0.8.0
 [0.7.0]: https://github.com/CMaintz/leash/compare/v0.6.0...v0.7.0
 [0.6.0]: https://github.com/CMaintz/leash/releases/tag/v0.6.0
