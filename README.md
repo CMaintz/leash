@@ -208,6 +208,19 @@ quality gate (mise verbs + habit-hooks structural smells); the committed `mise.t
 and `.habit-hooks/` support that. Neither is required to build, test, or contribute -
 they are an optional overlay, and habit-hooks never needs to be installed to use Leash.
 
+## Releasing
+
+Versioned per [Semantic Versioning](https://semver.org/) with a [CHANGELOG](CHANGELOG.md).
+Bump `package.json` and add the CHANGELOG section in a PR; after it merges, push the tag:
+
+```
+git tag v0.8.0 && git push origin v0.8.0
+```
+
+The `release` workflow then checks the tag matches `package.json`, re-runs the gate,
+publishes `@cmaintz/leash` to npm with provenance, and cuts the GitHub release from that
+version's CHANGELOG section. It needs an `NPM_TOKEN` repository secret.
+
 ## License
 
 MIT.
