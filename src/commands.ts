@@ -3,9 +3,9 @@
 // then runs `leash compile` to validate it. No second model is involved - this is just the
 // instruction text, shipped so `leash init` can drop it into a Claude Code commands dir.
 
-import { existsSync, mkdirSync, rmSync, writeFileSync } from 'node:fs';
 import { homedir } from 'node:os';
-import { dirname, join } from 'node:path';
+import { join } from 'node:path';
+import { removeIfExists, writeFileEnsuringDir } from './files.js';
 
 /** The command file's contents (front matter + the authoring procedure). */
 export const RUBRIC_COMMAND = `---
@@ -40,15 +40,10 @@ export function rubricCommandPath(project: boolean): string {
 
 /** Write the `/leash-rubric` command, creating the commands dir if needed. */
 export function writeRubricCommand(project: boolean): string {
-  const path = rubricCommandPath(project);
-  mkdirSync(dirname(path), { recursive: true });
-  writeFileSync(path, RUBRIC_COMMAND);
-  return path;
+  return writeFileEnsuringDir(rubricCommandPath(project), RUBRIC_COMMAND);
 }
 
 /** Remove the command file if present. Returns the path whether or not it existed. */
 export function removeRubricCommand(project: boolean): string {
-  const path = rubricCommandPath(project);
-  if (existsSync(path)) rmSync(path);
-  return path;
+  return removeIfExists(rubricCommandPath(project));
 }

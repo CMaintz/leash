@@ -44,6 +44,7 @@ leash report              # list the rules in .leash/rubric.json
 leash compile             # validate the rubric, show the active vs deferred split
 leash audit               # accept the current diff's findings into the baseline
 leash check [baseRef]     # print what this turn newly broke (default base: HEAD)
+                          #   --turn: since the turn snapshot; --json: machine-readable
 leash guard [baseRef]     # fail if the rubric was loosened vs baseRef (for CI)
 leash calibrate [N]       # score rules against the last N commits (default 20); flag dead ones
 leash edit-check <file>   # opt-in per-edit check of one file (see below)
@@ -163,14 +164,51 @@ The contract is checked against Codex's own generated schemas (`stop.command.inp
 `{"decision":"block","reason":...}` reply forces continuation, same as Claude Code. No
 key or no rubric still means silent fail-open.
 
-### OpenCode
+## OpenCode (plugin)
 
-Not yet wired, on purpose. OpenCode's plugin hooks return `void` and have no same-turn
-"block the stop and keep working" primitive the way Claude Code and Codex do; the only
-levers are a hard `tool.execute.before` block (that is jev-guard's job, not Leash's
-advisory turn coaching) or re-prompting the session through the SDK on `session.idle`
-(loop-prone, and a different product). Rather than ship a guessed, lesser adapter, Leash
-waits for a clean fit. The library core is host-agnostic, so adding one later is small.
+OpenCode's plugin hooks return `void`, so there is no Claude/Codex-style "block the stop".
+Leash does the closest honest thing: a generated plugin that re-prompts once.
+
+```
+leash init --opencode             # writes ~/.config/opencode/plugins/leash.js
+leash init --opencode --project   # or this repo's .opencode/plugins/leash.js
+leash uninstall --opencode
+```
+
+The plugin runs `leash snapshot` on each user message, and when the session goes idle it
+runs `leash check --turn --json` once. On a repair-band break it sends the reason back
+into the session as a single follow-up prompt (`client.session.prompt`), so the agent
+repairs it in a new turn rather than the same one. Loop guard, like Codex's
+`stop_hook_active`: at most one check and one nudge per user turn, and Leash's own nudge
+never resets the turn. It needs `leash` on `PATH` (a global install); if it is missing,
+the plugin fails open and stays silent.
+
+## Machine-readable checks
+
+`leash check --json` prints one stable JSON object - the contract the OpenCode plugin and
+CI consume. `--turn` diffs against the turn snapshot instead of a base ref:
+
+```json
+{
+  "version": 1,
+  "base": "HEAD",
+  "ran": true,
+  "findings": [
+    {
+      "ruleId": "no-premature-abstraction",
+      "file": "src/new.ts",
+      "probability": 0.93,
+      "band": "repair",
+      "message": "..."
+    }
+  ],
+  "skipped": [],
+  "decision": { "decision": "block", "reason": "Leash: this turn broke 1 project rule(s): ..." }
+}
+```
+
+`findings` are only the new (non-baselined) ones. With no key or no rubric it still prints
+valid JSON: `"ran": false`, a `reason`, empty `findings`, and an empty `decision`.
 
 ## Library
 

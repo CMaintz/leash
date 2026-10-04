@@ -7,7 +7,7 @@ import { execSync } from 'node:child_process';
 import { existsSync, mkdirSync, readFileSync, writeFileSync } from 'node:fs';
 import { createRequire } from 'node:module';
 import { calibrationReport, tallyFires, type RuleCalibration } from './calibrate.js';
-import { checkTurn, type Skipped } from './check.js';
+import { checkTurn, type CheckResult, type Skipped } from './check.js';
 import { summarize, type CompileSummary } from './compile.js';
 import { parseDiff, type FileDiff } from './diff.js';
 import { baselineFrom, findingsForFile, questionsForFile } from './engine.js';
@@ -15,6 +15,7 @@ import { rubricDrift } from './guard.js';
 import { readHookInput, stopDecision } from './hook.js';
 import { writeRubricCommand, removeRubricCommand } from './commands.js';
 import { addLeashHooks, type Host, hostConfigPath, loadSettings, removeLeashHooks, saveSettings } from './install.js';
+import { removeOpenCodePlugin, writeOpenCodePlugin } from './opencode.js';
 import { providerFromEnv } from './provider.js';
 import { diffToWorktree, readTurnBase, writeTurnBase } from './snapshot.js';
 import { parseRubric, type Finding, type Rubric } from './schema.js';
@@ -22,8 +23,12 @@ import { parseRubric, type Finding, type Rubric } from './schema.js';
 const RUBRIC_PATH = '.leash/rubric.json';
 const BASELINE_PATH = '.leash/baseline.json';
 
+/** An install target: a JSON-hooks host, or OpenCode (which takes a plugin file). */
+type Target = Host | 'opencode';
+
 async function main(): Promise<void> {
-  const [command = 'help', arg] = process.argv.slice(2);
+  const command = process.argv[2] ?? 'help';
+  const arg = positional();
   const commands: Record<string, () => Promise<void> | void> = {
     check: () => check(arg),
     audit: () => audit(arg),
@@ -34,25 +39,41 @@ async function main(): Promise<void> {
     'edit-check': () => editCheck(arg),
     snapshot: () => snapshot(),
     hook: () => hook(),
-    init: () => install(hasFlag('--project'), hostFlag()),
-    uninstall: () => uninstallHooks(hasFlag('--project'), hostFlag()),
+    init: () => install(hasFlag('--project'), targetFlag()),
+    uninstall: () => uninstallHooks(hasFlag('--project'), targetFlag()),
     version: () => console.log(`leash ${packageVersion()}`),
     help: () =>
       console.log(
         'leash <check|audit|report|compile|guard|calibrate|edit-check|init|uninstall> [arg]\n' +
-          '  init/uninstall flags: --project (this repo, default global), --codex (Codex, default Claude Code)',
+          '  check flags: --turn (diff since the turn snapshot), --json (machine-readable result)\n' +
+          '  init/uninstall flags: --project (this repo, default global); --codex or --opencode (default Claude Code)',
       ),
   };
   await (commands[command] ?? commands.help)!();
 }
 
-async function check(baseRef = 'HEAD'): Promise<void> {
+// `--turn` diffs since the turn snapshot (what the hooks judge); `--json` prints a stable
+// machine-readable result (the OpenCode plugin and CI consume it).
+async function check(baseRef?: string): Promise<void> {
+  const base = hasFlag('--turn') ? readTurnBase() : (baseRef ?? 'HEAD');
+  const json = hasFlag('--json');
   const rubric = loadRubric();
   const provider = providerFromEnv();
-  if (!rubric || !provider) return skip(rubric, provider);
-  const { actionable, skipped } = await checkTurn(provider, rubric, parseDiff(diffToWorktree(baseRef)), loadBaseline());
-  printFindings(actionable);
-  printSkipped(skipped);
+  if (!rubric || !provider) return json ? printCheckJson(base, null, skipReason(rubric)) : skip(rubric, provider);
+  const result = await checkTurn(provider, rubric, parseDiff(diffToWorktree(base)), loadBaseline());
+  if (json) return printCheckJson(base, result);
+  printFindings(result.actionable);
+  printSkipped(result.skipped);
+}
+
+function printCheckJson(base: string, result: CheckResult | null, reason?: string): void {
+  const findings = result?.actionable ?? [];
+  const out = { version: 1, base, ran: result !== null, ...(reason ? { reason } : {}) };
+  console.log(JSON.stringify({ ...out, findings, skipped: result?.skipped ?? [], decision: stopDecision(findings) }));
+}
+
+function skipReason(rubric: Rubric | null): string {
+  return rubric ? 'no JEV_API_KEY set' : `no rubric at ${RUBRIC_PATH}`;
 }
 
 async function audit(baseRef = 'HEAD'): Promise<void> {
@@ -85,14 +106,18 @@ async function hook(): Promise<void> {
 
 // Install the Stop + UserPromptSubmit hooks into the host's config (Claude Code or Codex),
 // plus the /leash-rubric authoring command (Claude Code only - its command path is known).
-function install(project: boolean, host: Host): void {
+// OpenCode takes a plugin file instead (see opencode.ts).
+function install(project: boolean, host: Target): void {
+  if (host === 'opencode') return void console.log(`leash: added OpenCode plugin at ${writeOpenCodePlugin(project)}`);
   const path = hostConfigPath(host, project);
   saveSettings(path, addLeashHooks(loadSettings(path)));
   console.log(`leash: installed snapshot + hook into ${path}`);
   if (host === 'claude') console.log(`leash: added /leash-rubric command at ${writeRubricCommand(project)}`);
 }
 
-function uninstallHooks(project: boolean, host: Host): void {
+function uninstallHooks(project: boolean, host: Target): void {
+  if (host === 'opencode')
+    return void console.log(`leash: removed OpenCode plugin at ${removeOpenCodePlugin(project)}`);
   const path = hostConfigPath(host, project);
   saveSettings(path, removeLeashHooks(loadSettings(path)));
   console.log(`leash: removed hooks from ${path}`);
@@ -110,8 +135,14 @@ function hasFlag(flag: string): boolean {
   return process.argv.slice(3).includes(flag);
 }
 
-function hostFlag(): Host {
+function targetFlag(): Target {
+  if (hasFlag('--opencode')) return 'opencode';
   return hasFlag('--codex') ? 'codex' : 'claude';
+}
+
+// The first non-flag argument after the subcommand (a base ref, a file, a sample size).
+function positional(): string | undefined {
+  return process.argv.slice(3).find((arg) => !arg.startsWith('--'));
 }
 
 function report(): void {
