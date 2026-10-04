@@ -17,11 +17,20 @@ const HOST_CONFIG: Record<Host, { dir: string; file: string }> = {
   codex: { dir: '.codex', file: 'hooks.json' },
 };
 
-/** The two hooks Leash installs: snapshot at turn start, check at turn end. */
-const LEASH_HOOKS: Record<string, string> = {
-  UserPromptSubmit: 'leash snapshot',
-  Stop: 'leash hook',
-};
+interface HookSpec {
+  event: string;
+  command: string;
+  matcher?: string;
+}
+
+/** The turn hooks Leash always installs: snapshot at turn start, check at turn end. */
+const TURN_HOOKS: readonly HookSpec[] = [
+  { event: 'UserPromptSubmit', command: 'leash snapshot' },
+  { event: 'Stop', command: 'leash hook' },
+];
+
+/** The opt-in per-edit hook (`init --edit-phase`). */
+const EDIT_HOOK: HookSpec = { event: 'PostToolUse', command: 'leash edit-hook', matcher: 'Edit|Write|MultiEdit' };
 
 interface HookEntry {
   type: 'command';
@@ -29,6 +38,7 @@ interface HookEntry {
 }
 
 interface HookGroup {
+  matcher?: string;
   hooks?: HookEntry[];
 }
 
@@ -37,17 +47,26 @@ export interface ClaudeSettings {
   [key: string]: unknown;
 }
 
+export interface InstallOptions {
+  /** Also wire the per-edit PostToolUse check (off by default). */
+  editPhase?: boolean;
+}
+
 /** Add Leash's hook groups, skipping any already present (idempotent). */
-export function addLeashHooks(settings: ClaudeSettings): ClaudeSettings {
-  const hooks: Record<string, HookGroup[]> = { ...(settings.hooks ?? {}) };
-  for (const [event, command] of Object.entries(LEASH_HOOKS)) {
-    const groups = [...(hooks[event] ?? [])];
-    if (!groups.some((group) => group.hooks?.some((hook) => hook.command === command))) {
-      groups.push({ hooks: [{ type: 'command', command }] });
-    }
-    hooks[event] = groups;
+export function addLeashHooks(settings: ClaudeSettings, options: InstallOptions = {}): ClaudeSettings {
+  const specs = options.editPhase ? [...TURN_HOOKS, EDIT_HOOK] : TURN_HOOKS;
+  return specs.reduce(addHook, settings);
+}
+
+function addHook(settings: ClaudeSettings, spec: HookSpec): ClaudeSettings {
+  const groups = [...(settings.hooks?.[spec.event] ?? [])];
+  if (!groups.some((group) => group.hooks?.some((hook) => hook.command === spec.command))) {
+    groups.push({
+      ...(spec.matcher ? { matcher: spec.matcher } : {}),
+      hooks: [{ type: 'command', command: spec.command }],
+    });
   }
-  return { ...settings, hooks };
+  return { ...settings, hooks: { ...(settings.hooks ?? {}), [spec.event]: groups } };
 }
 
 /** Remove every hook group that runs a `leash` command. */

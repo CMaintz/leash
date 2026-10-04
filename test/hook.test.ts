@@ -1,6 +1,7 @@
+import { join, sep } from 'node:path';
 import { Readable } from 'node:stream';
 import { describe, expect, it } from 'vitest';
-import { readHookInput, stopDecision } from '../src/hook.js';
+import { editHookOutput, readHookInput, repoRelative, stopDecision } from '../src/hook.js';
 import type { Finding } from '../src/schema.js';
 
 const finding = (band: Finding['band'], id = 'r'): Finding => ({
@@ -23,6 +24,31 @@ describe('stopDecision', () => {
     expect(decision.reason).toContain('1 project rule');
     expect(decision.reason).toContain('no-premature-abstraction');
     expect(decision.reason).toContain('Repair them, then continue.');
+  });
+});
+
+describe('editHookOutput', () => {
+  it('says nothing without a repair-band finding', () => {
+    expect(editHookOutput([])).toEqual({});
+    expect(editHookOutput([finding('note')])).toEqual({});
+  });
+
+  it('hands repairs to Claude as PostToolUse additionalContext, never a block', () => {
+    const out = editHookOutput([finding('repair', 'small-functions')]);
+    expect(out.hookSpecificOutput?.hookEventName).toBe('PostToolUse');
+    expect(out.hookSpecificOutput?.additionalContext).toContain('small-functions');
+    expect(out).not.toHaveProperty('decision');
+  });
+});
+
+describe('repoRelative', () => {
+  it('maps an absolute path inside the repo to a forward-slash relative one', () => {
+    expect(repoRelative(join(sep, 'repo', 'src', 'a.ts'), join(sep, 'repo'))).toBe('src/a.ts');
+  });
+
+  it('rejects paths outside the repo, and the root itself', () => {
+    expect(repoRelative(join(sep, 'elsewhere', 'a.ts'), join(sep, 'repo'))).toBeNull();
+    expect(repoRelative(join(sep, 'repo'), join(sep, 'repo'))).toBeNull();
   });
 });
 

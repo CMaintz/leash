@@ -123,24 +123,31 @@ silent and lets the agent stop (fail open).
 
 ### Opt-in: per-edit checks (off by default)
 
-For rules with `"phase": "edit"`, `leash edit-check <file>` judges a single file right
-after it is written. It is deliberately **not** installed by `leash init`, because at
-Jev's edit-level precision a per-edit auto-repair loop risks the agent chasing phantoms -
-turn checks are the default for a reason. If you want it anyway, wire it yourself as a
-`PostToolUse` hook (it stays silent without a key or edit-phase rules):
+For rules with `"phase": "edit"`, Leash can judge each file right after Claude writes it.
+It is **not** wired by default: at Jev's edit-level precision, per-edit feedback risks the
+agent chasing phantoms, which is why turn checks are the default. Opt in with:
+
+```
+leash init --edit-phase           # adds a PostToolUse hook for Edit|Write|MultiEdit
+```
+
+That adds:
 
 ```json
 {
   "hooks": {
     "PostToolUse": [
-      {
-        "matcher": "Edit|Write|MultiEdit",
-        "hooks": [{ "type": "command", "command": "leash edit-check \"$CLAUDE_FILE_PATH\"" }]
-      }
+      { "matcher": "Edit|Write|MultiEdit", "hooks": [{ "type": "command", "command": "leash edit-hook" }] }
     ]
   }
 }
 ```
+
+`leash edit-hook` reads the edited path from the hook payload (`tool_input.file_path`),
+checks only that file's diff against edit-phase rules, subtracts the ratchet baseline, and
+on a repair-band break returns it as `additionalContext` - advisory text Claude sees and
+weighs, never a block. It stays silent without a key, without edit-phase rules, or for files
+outside the repo. To check one file by hand, use `leash edit-check <file>`.
 
 ## Codex (turn hook)
 

@@ -10,12 +10,13 @@ import { calibrationReport, tallyFires, type RuleCalibration } from './calibrate
 import { checkTurn, type CheckResult, type Skipped } from './check.js';
 import { summarize, type CompileSummary } from './compile.js';
 import { parseDiff, type FileDiff } from './diff.js';
-import { baselineFrom, findingsForFile, questionsForFile } from './engine.js';
+import { baselineFrom, findingsForFile, isIgnored, newFindings, questionsForFile } from './engine.js';
 import { rubricDrift } from './guard.js';
-import { readHookInput, stopDecision } from './hook.js';
+import { editHookOutput, readHookInput, repoRelative, stopDecision } from './hook.js';
 import { writeRubricCommand, removeRubricCommand } from './commands.js';
 import { addLeashHooks, type Host, hostConfigPath, loadSettings, removeLeashHooks, saveSettings } from './install.js';
 import { removeOpenCodePlugin, writeOpenCodePlugin } from './opencode.js';
+import { isLeashPath } from './patch.js';
 import { providerFromEnv } from './provider.js';
 import { diffToWorktree, readTurnBase, writeTurnBase } from './snapshot.js';
 import { parseRubric, type Finding, type Rubric } from './schema.js';
@@ -39,6 +40,7 @@ async function main(): Promise<void> {
     'edit-check': () => editCheck(arg),
     snapshot: () => snapshot(),
     hook: () => hook(),
+    'edit-hook': () => editHook(),
     init: () => install(hasFlag('--project'), targetFlag()),
     uninstall: () => uninstallHooks(hasFlag('--project'), targetFlag()),
     version: () => console.log(`leash ${packageVersion()}`),
@@ -46,7 +48,7 @@ async function main(): Promise<void> {
       console.log(
         'leash <check|audit|report|compile|guard|calibrate|edit-check|init|uninstall> [arg]\n' +
           '  check flags: --turn (diff since the turn snapshot), --json (machine-readable result)\n' +
-          '  init/uninstall flags: --project (this repo, default global); --codex or --opencode (default Claude Code)',
+          '  init/uninstall flags: --project (this repo, default global); --codex or --opencode (default Claude Code); --edit-phase (also wire the per-edit check)',
       ),
   };
   await (commands[command] ?? commands.help)!();
@@ -110,7 +112,7 @@ async function hook(): Promise<void> {
 function install(project: boolean, host: Target): void {
   if (host === 'opencode') return void console.log(`leash: added OpenCode plugin at ${writeOpenCodePlugin(project)}`);
   const path = hostConfigPath(host, project);
-  saveSettings(path, addLeashHooks(loadSettings(path)));
+  saveSettings(path, addLeashHooks(loadSettings(path), { editPhase: hasFlag('--edit-phase') }));
   console.log(`leash: installed snapshot + hook into ${path}`);
   if (host === 'claude') console.log(`leash: added /leash-rubric command at ${writeRubricCommand(project)}`);
 }
@@ -201,15 +203,37 @@ async function calibrate(): Promise<void> {
 }
 
 // Opt-in edit-phase check for one file's working-tree diff. Advisory, exit 0.
+// Opt-in edit-phase check for one file's working-tree diff. Advisory, exit 0.
 async function editCheck(file?: string): Promise<void> {
   if (!file) return void console.log('usage: leash edit-check <file>');
+  const findings = await editFindings(file);
+  if (findings === null) return skip(loadRubric(), providerFromEnv());
+  printFindings(findings);
+}
+
+// PostToolUse hook (`init --edit-phase`): judge the file Claude just edited and hand any
+// repair-band break back as context Claude can see. Silent on everything else.
+async function editHook(): Promise<void> {
+  const path = (await readHookInput()).tool_input?.file_path;
+  const file = path ? repoRelative(path, repoRoot()) : null;
+  if (!file) return;
+  const out = editHookOutput((await editFindings(file)) ?? []);
+  if (out.hookSpecificOutput) console.log(JSON.stringify(out));
+}
+
+// New (non-baselined) edit-phase findings for `file`; null when there is no rubric or key.
+async function editFindings(file: string): Promise<Finding[] | null> {
   const rubric = loadRubric();
   const provider = providerFromEnv();
-  if (!rubric || !provider) return skip(rubric, provider);
+  if (!rubric || !provider) return null;
   const questions = questionsForFile(rubric, file, 'edit');
-  if (Object.keys(questions).length === 0) return void console.log(`leash: no edit-phase rules for ${file}.`);
+  if (isLeashPath(file) || isIgnored(file) || Object.keys(questions).length === 0) return [];
   const { answers } = await provider.evaluate({ state: { file, diff: diffToWorktree('HEAD', file) }, questions });
-  printFindings(findingsForFile(rubric, file, answers, 'edit'));
+  return newFindings(findingsForFile(rubric, file, answers, 'edit'), loadBaseline());
+}
+
+function repoRoot(): string {
+  return execSync('git rev-parse --show-toplevel', { encoding: 'utf8' }).trim();
 }
 
 // Diff of each of the last `sample` commits, parsed into per-file patches.
