@@ -5,7 +5,7 @@
 //   - when the session goes idle (`session.status` idle, or the deprecated `session.idle`)
 //     it runs `leash check --turn --json` once, and on a repair-band break sends the
 //     reason back into the session as a follow-up prompt via `client.session.prompt`.
-// Loop guard, mirroring Codex's stop_hook_active: at most one check and one nudge per
+// Loop guard: at most one check and one nudge per
 // user turn. Leash's own nudge is recognised (it starts with "Leash:") so it does not
 // reset the snapshot. Verified against anomalyco/opencode: plugin event hook, the
 // session.status / session.idle event schemas, chat.message input, client.session.prompt.

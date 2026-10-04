@@ -12,13 +12,13 @@ import { summarize, type CompileSummary } from './compile.js';
 import { parseDiff, type FileDiff } from './diff.js';
 import { baselineFrom, findingsForFile, isIgnored, newFindings, questionsForFile } from './engine.js';
 import { rubricDrift } from './guard.js';
-import { editHookOutput, readHookInput, repoRelative, stopDecision } from './hook.js';
+import { editHookOutput, readHookInput, repoRelative, stopDecision, stopDecisionOnce } from './hook.js';
 import { writeRubricCommand, removeRubricCommand } from './commands.js';
 import { addLeashHooks, type Host, hostConfigPath, loadSettings, removeLeashHooks, saveSettings } from './install.js';
 import { removeOpenCodePlugin, writeOpenCodePlugin } from './opencode.js';
 import { isLeashPath } from './patch.js';
 import { providerFromEnv } from './provider.js';
-import { diffToWorktree, readTurnBase, writeTurnBase } from './snapshot.js';
+import { diffToWorktree, readBlocked, readTurnBase, recordBlocked, writeTurnBase } from './snapshot.js';
 import { parseRubric, type Finding, type Rubric } from './schema.js';
 
 const RUBRIC_PATH = '.leash/rubric.json';
@@ -94,16 +94,20 @@ function snapshot(): void {
   writeTurnBase();
 }
 
-// Stop hook: check what changed since the snapshot; block only on repair-band breaks.
+// Stop hook: check what changed since the snapshot and block on new repair-band breaks.
+// Every Stop is checked, continuations included (that is when a repair gets verified);
+// a finding already blocked on this turn never blocks again, so nothing can loop.
 async function hook(): Promise<void> {
-  const input = await readHookInput(); // the hook already runs in cwd; we only read flags
-  if (input.stop_hook_active) return; // Codex already forced one continuation; don't re-block
+  await readHookInput(); // drain the payload; the turn state lives in the git dir
   const rubric = loadRubric();
   const provider = providerFromEnv();
   if (!rubric || !provider) return; // fail open, silent: allow the stop
-  const { actionable } = await checkTurn(provider, rubric, parseDiff(diffToWorktree(readTurnBase())), loadBaseline());
-  const decision = stopDecision(actionable);
-  if (decision.decision) console.log(JSON.stringify(decision));
+  const base = readTurnBase();
+  const { actionable } = await checkTurn(provider, rubric, parseDiff(diffToWorktree(base)), loadBaseline());
+  const { decision, blocked } = stopDecisionOnce(actionable, readBlocked(base));
+  if (!decision.decision) return;
+  recordBlocked(base, blocked);
+  console.log(JSON.stringify(decision));
 }
 
 // Install the Stop + UserPromptSubmit hooks into the host's config (Claude Code or Codex),

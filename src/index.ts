@@ -22,7 +22,7 @@ export {
   questionsForFile,
   rulesForFile,
 } from './engine.js';
-export { editHookOutput, readHookInput, repoRelative, stopDecision } from './hook.js';
+export { editHookOutput, readHookInput, repoRelative, stopDecision, stopDecisionOnce } from './hook.js';
 export type { EditHookOutput, StopDecision, StopHookInput } from './hook.js';
 export { RUBRIC_COMMAND, removeRubricCommand, rubricCommandPath, writeRubricCommand } from './commands.js';
 export { addLeashHooks, hostConfigPath, removeLeashHooks } from './install.js';
@@ -32,5 +32,5 @@ export { chunkPatch, isBinaryPatch, isLeashPath, MAX_PATCH_CHARS, mergeAnswers }
 export { parseRubric } from './schema.js';
 export type { Baseline, Band, Finding, Phase, Rubric, Rule } from './schema.js';
 export { DEFAULT_TIMEOUT_MS, postJson, providerFromEnv, TypeSafeProvider } from './provider.js';
-export { diffToWorktree, readTurnBase, worktreeTree, writeTurnBase } from './snapshot.js';
+export { diffToWorktree, readBlocked, readTurnBase, recordBlocked, worktreeTree, writeTurnBase } from './snapshot.js';
 export type { Answer, JevProvider, JevRequest, JevResponse, Question } from './provider.js';

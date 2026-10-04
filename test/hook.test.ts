@@ -1,7 +1,7 @@
 import { join, sep } from 'node:path';
 import { Readable } from 'node:stream';
 import { describe, expect, it } from 'vitest';
-import { editHookOutput, readHookInput, repoRelative, stopDecision } from '../src/hook.js';
+import { editHookOutput, readHookInput, repoRelative, stopDecision, stopDecisionOnce } from '../src/hook.js';
 import type { Finding } from '../src/schema.js';
 
 const finding = (band: Finding['band'], id = 'r'): Finding => ({
@@ -24,6 +24,27 @@ describe('stopDecision', () => {
     expect(decision.reason).toContain('1 project rule');
     expect(decision.reason).toContain('no-premature-abstraction');
     expect(decision.reason).toContain('Repair them, then continue.');
+  });
+});
+
+describe('stopDecisionOnce', () => {
+  it('blocks a first-time repair and records its fingerprint', () => {
+    const { decision, blocked } = stopDecisionOnce([finding('repair', 'a')], []);
+    expect(decision.decision).toBe('block');
+    expect(blocked).toEqual(['a::src/a.ts']);
+  });
+
+  it('never blocks twice on the same finding in a turn (no loop on a phantom)', () => {
+    const { decision, blocked } = stopDecisionOnce([finding('repair', 'a')], ['a::src/a.ts']);
+    expect(decision).toEqual({});
+    expect(blocked).toEqual(['a::src/a.ts']);
+  });
+
+  it('still blocks a NEW break introduced while repairing, naming only that one', () => {
+    const { decision, blocked } = stopDecisionOnce([finding('repair', 'a'), finding('repair', 'b')], ['a::src/a.ts']);
+    expect(decision.reason).toContain('"b"');
+    expect(decision.reason).not.toContain('"a"');
+    expect(blocked).toEqual(['a::src/a.ts', 'b::src/a.ts']);
   });
 });
 

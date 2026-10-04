@@ -121,6 +121,17 @@ agent created this turn are judged too), and prints `{"decision":"block","reason
 only when a turn newly breaks a repair-band rule. No key or no rubric means it stays
 silent and lets the agent stop (fail open).
 
+Every Stop is checked, including the continuation after a block - that is when the
+agent's repair gets verified, and when a repair that breaks something else gets caught.
+But Leash blocks **at most once per finding per turn**: a rule it already flagged in this
+turn never blocks again (so a finding Jev keeps wrongly reporting cannot loop), and only
+genuinely new breaks can. The record lives in the git dir and resets on the next prompt.
+(Claude Code's own cap of 8 consecutive continuations still applies on top.)
+
+One side effect to know: building the snapshot hashes untracked, non-ignored files into
+`.git/objects` (the same thing `git add` would do; nothing is committed, and `git gc`
+prunes the objects later). Keep secrets in `.gitignore`d files, as you would anyway.
+
 ### Opt-in: per-edit checks (off by default)
 
 For rules with `"phase": "edit"`, Leash can judge each file right after Claude writes it.
@@ -164,8 +175,8 @@ leash uninstall --codex
 
 It writes the same `snapshot` + `hook` pair. Codex loads hooks straight from that
 `hooks.json` (no separate enable flag), so `leash init --codex` is all it takes; a
-project-local `.codex/` must be trusted first. Leash reads Codex's `stop_hook_active`
-flag and will not re-block a turn Codex has already nudged once, so there is no loop.
+project-local `.codex/` must be trusted first. The same once-per-finding rule as on
+Claude Code applies, so continuations are re-checked but nothing can loop.
 The contract is checked against Codex's own generated schemas (`stop.command.input` /
 `stop.command.output`): the `Stop` input carries `cwd` + `stop_hook_active`, and a
 `{"decision":"block","reason":...}` reply forces continuation, same as Claude Code. No
@@ -185,8 +196,8 @@ leash uninstall --opencode
 The plugin runs `leash snapshot` on each user message, and when the session goes idle it
 runs `leash check --turn --json` once. On a repair-band break it sends the reason back
 into the session as a single follow-up prompt (`client.session.prompt`), so the agent
-repairs it in a new turn rather than the same one. Loop guard, like Codex's
-`stop_hook_active`: at most one check and one nudge per user turn, and Leash's own nudge
+repairs it in a new turn rather than the same one. Loop guard: at most one check and
+one nudge per user turn (the repair turn is not re-checked, unlike Claude Code / Codex), and Leash's own nudge
 never resets the turn. It needs `leash` on `PATH` (a global install); if it is missing,
 the plugin fails open and stays silent.
 

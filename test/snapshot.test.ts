@@ -3,7 +3,7 @@ import { existsSync, mkdtempSync, rmSync, writeFileSync } from 'node:fs';
 import { tmpdir } from 'node:os';
 import { join } from 'node:path';
 import { afterEach, beforeEach, describe, expect, it } from 'vitest';
-import { diffToWorktree, readTurnBase, writeTurnBase } from '../src/snapshot.js';
+import { diffToWorktree, readBlocked, readTurnBase, recordBlocked, writeTurnBase } from '../src/snapshot.js';
 
 const git = (cmd: string): string => execSync(`git ${cmd}`, { encoding: 'utf8' });
 
@@ -55,6 +55,16 @@ describe('turn snapshots (real git repo)', () => {
     writeTurnBase();
     writeFileSync('secret.env', 'TOKEN=x\n');
     expect(diffToWorktree(readTurnBase())).toBe('');
+  });
+
+  it('keeps a per-turn block record that a new snapshot clears', () => {
+    writeTurnBase();
+    const base = readTurnBase();
+    recordBlocked(base, ['r::src/a.ts']);
+    expect(readBlocked(base)).toEqual(['r::src/a.ts']);
+    expect(readBlocked('some-other-turn')).toEqual([]);
+    writeTurnBase();
+    expect(readBlocked(readTurnBase())).toEqual([]);
   });
 
   it('falls back to HEAD with no snapshot yet', () => {
