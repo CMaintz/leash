@@ -112,10 +112,13 @@ already there and never duplicates. Under the hood it adds the two hooks to
 }
 ```
 
-`leash snapshot` records the pre-turn state; `leash hook` reads the Stop payload, diffs
-against that snapshot, and prints `{"decision":"block","reason":...}` only when a turn
-newly breaks a repair-band rule. No key or no rubric means it stays silent and lets the
-agent stop (fail open).
+`leash snapshot` records the pre-turn state as a git tree of the whole working tree -
+tracked **and untracked** files, minus anything `.gitignore`d - built in a scratch index
+so your real index is never touched, and stored in the git dir rather than your working
+tree. `leash hook` reads the Stop payload, diffs against that snapshot (so files the
+agent created this turn are judged too), and prints `{"decision":"block","reason":...}`
+only when a turn newly breaks a repair-band rule. No key or no rubric means it stays
+silent and lets the agent stop (fail open).
 
 ### Opt-in: per-edit checks (off by default)
 
@@ -194,7 +197,11 @@ keeps Leash out of `mise run gate`. It is a coach on the proposer side, never an
 
 Jev is about 68% accurate, so Leash is advisory: it never blocks a commit or fails a
 build. It says which rule and how likely, never why or how many; the agent supplies the
-fix. Text-only, so it judges per file and chunks large diffs.
+fix. Text-only, so it judges per file (up to 4 files in parallel) and splits a patch too
+large for one call into hunk-sized chunks, flagging a rule if any chunk breaks it.
+Lockfiles, minified bundles, source maps, binary files and `.leash/` itself are never
+sent. A call that fails or times out (20 s, `LEASH_TIMEOUT_MS` to change) skips only
+that file: `leash check` lists it as `[skipped]`, and the Stop hook lets the turn through.
 
 ## Contributing
 

@@ -72,6 +72,21 @@ export function baselineFrom(findings: Finding[]): string[] {
   return [...new Set(findings.map(fingerprint))].sort();
 }
 
+/** Machine-written files no project rule is about; judging them only costs calls. */
+export const DEFAULT_IGNORE: readonly string[] = [
+  '**/package-lock.json',
+  '**/pnpm-lock.yaml',
+  '**/yarn.lock',
+  '**/*.lock',
+  '**/*.min.js',
+  '**/*.map',
+];
+
+/** True when `file` matches one of the default ignore globs. */
+export function isIgnored(file: string, ignore: readonly string[] = DEFAULT_IGNORE): boolean {
+  return ignore.some((glob) => matchGlob(glob, file));
+}
+
 function inScope(scope: string[], file: string): boolean {
   return scope.length === 0 || scope.some((glob) => matchGlob(glob, file));
 }

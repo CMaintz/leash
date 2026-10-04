@@ -12,7 +12,7 @@ describe('rubric command content', () => {
   });
 
   it('uses no em or en dashes', () => {
-    expect(/[–—]/.test(RUBRIC_COMMAND)).toBe(false);
+    expect(new RegExp('[\u2013\u2014]').test(RUBRIC_COMMAND)).toBe(false);
   });
 });
 

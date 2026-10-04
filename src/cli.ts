@@ -7,7 +7,7 @@ import { execSync } from 'node:child_process';
 import { existsSync, mkdirSync, readFileSync, writeFileSync } from 'node:fs';
 import { createRequire } from 'node:module';
 import { calibrationReport, tallyFires, type RuleCalibration } from './calibrate.js';
-import { checkTurn } from './check.js';
+import { checkTurn, type Skipped } from './check.js';
 import { summarize, type CompileSummary } from './compile.js';
 import { parseDiff, type FileDiff } from './diff.js';
 import { baselineFrom, findingsForFile, questionsForFile } from './engine.js';
@@ -16,11 +16,11 @@ import { readHookInput, stopDecision } from './hook.js';
 import { writeRubricCommand, removeRubricCommand } from './commands.js';
 import { addLeashHooks, type Host, hostConfigPath, loadSettings, removeLeashHooks, saveSettings } from './install.js';
 import { providerFromEnv } from './provider.js';
+import { diffToWorktree, readTurnBase, writeTurnBase } from './snapshot.js';
 import { parseRubric, type Finding, type Rubric } from './schema.js';
 
 const RUBRIC_PATH = '.leash/rubric.json';
 const BASELINE_PATH = '.leash/baseline.json';
-const TURN_BASE_PATH = '.leash/turn-base';
 
 async function main(): Promise<void> {
   const [command = 'help', arg] = process.argv.slice(2);
@@ -50,27 +50,25 @@ async function check(baseRef = 'HEAD'): Promise<void> {
   const rubric = loadRubric();
   const provider = providerFromEnv();
   if (!rubric || !provider) return skip(rubric, provider);
-  const diffs = parseDiff(gitDiff(baseRef));
-  const { actionable } = await checkTurn(provider, rubric, diffs, loadBaseline());
+  const { actionable, skipped } = await checkTurn(provider, rubric, parseDiff(diffToWorktree(baseRef)), loadBaseline());
   printFindings(actionable);
+  printSkipped(skipped);
 }
 
 async function audit(baseRef = 'HEAD'): Promise<void> {
   const rubric = loadRubric();
   const provider = providerFromEnv();
   if (!rubric || !provider) return skip(rubric, provider);
-  const { findings } = await checkTurn(provider, rubric, parseDiff(gitDiff(baseRef)), []);
+  const { findings, skipped } = await checkTurn(provider, rubric, parseDiff(diffToWorktree(baseRef)), []);
   writeJson(BASELINE_PATH, baselineFrom(findings));
   console.log(`leash: accepted ${findings.length} finding(s) into ${BASELINE_PATH}`);
+  printSkipped(skipped);
 }
 
-// UserPromptSubmit hook: snapshot the working tree so the Stop hook can diff just
-// this turn's changes. `git stash create` records index + working tree without
-// touching them; empty output means nothing uncommitted, so fall back to HEAD.
+// UserPromptSubmit hook: snapshot the whole working tree (untracked files included) so
+// the Stop hook can diff exactly this turn's changes. See snapshot.ts.
 function snapshot(): void {
-  const ref = execSync('git stash create', { encoding: 'utf8' }).trim() || 'HEAD';
-  mkdirSync('.leash', { recursive: true });
-  writeFileSync(TURN_BASE_PATH, `${ref}\n`);
+  writeTurnBase();
 }
 
 // Stop hook: check what changed since the snapshot; block only on repair-band breaks.
@@ -80,7 +78,7 @@ async function hook(): Promise<void> {
   const rubric = loadRubric();
   const provider = providerFromEnv();
   if (!rubric || !provider) return; // fail open, silent: allow the stop
-  const { actionable } = await checkTurn(provider, rubric, parseDiff(gitDiff(turnBase())), loadBaseline());
+  const { actionable } = await checkTurn(provider, rubric, parseDiff(diffToWorktree(readTurnBase())), loadBaseline());
   const decision = stopDecision(actionable);
   if (decision.decision) console.log(JSON.stringify(decision));
 }
@@ -179,7 +177,7 @@ async function editCheck(file?: string): Promise<void> {
   if (!rubric || !provider) return skip(rubric, provider);
   const questions = questionsForFile(rubric, file, 'edit');
   if (Object.keys(questions).length === 0) return void console.log(`leash: no edit-phase rules for ${file}.`);
-  const { answers } = await provider.evaluate({ state: { file, diff: gitDiff(`HEAD -- ${file}`) }, questions });
+  const { answers } = await provider.evaluate({ state: { file, diff: diffToWorktree('HEAD', file) }, questions });
   printFindings(findingsForFile(rubric, file, answers, 'edit'));
 }
 
@@ -223,13 +221,9 @@ function skip(rubric: Rubric | null, provider: unknown): void {
   if (!provider) console.log('leash: no JEV_API_KEY set - skipping (fail open).');
 }
 
-function gitDiff(baseRef: string): string {
-  return execSync(`git diff ${baseRef}`, { encoding: 'utf8', maxBuffer: 32 * 1024 * 1024 });
-}
-
-function turnBase(): string {
-  if (!existsSync(TURN_BASE_PATH)) return 'HEAD';
-  return readFileSync(TURN_BASE_PATH, 'utf8').trim() || 'HEAD';
+// Files whose Jev call failed are judged clean (fail open) but never silently.
+function printSkipped(skipped: Skipped[]): void {
+  for (const s of skipped) console.log(`  [skipped] ${s.file}: ${s.reason}`);
 }
 
 function loadRubric(): Rubric | null {
