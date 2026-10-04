@@ -8,6 +8,25 @@ All notable changes to this project are documented here. Format: [Keep a Changel
 
 - OpenCode hook adapter (deferred: OpenCode's plugin hooks return `void`, with no same-turn block primitive; waiting for a clean fit rather than shipping a lesser adapter).
 
+## [0.7.0] - 2026-10-04
+
+Turn-check correctness. Every fix here is something 0.6 silently got wrong.
+
+### Fixed
+
+- **Files created during a turn are now judged.** The turn snapshot was `git stash create` plus `git diff`, which ignore untracked files - so a brand-new file (the most common thing an agent writes) was never checked. Snapshots are now a git tree of the whole working tree (tracked + untracked, `.gitignore` respected), built in a scratch index so the real index is never touched. `leash check`, `audit` and `edit-check` use the same working-tree diff.
+- **Large patches are actually chunked.** The README already promised this; nothing did it. An oversized patch is split on hunk boundaries (header repeated per chunk) and a rule counts as broken if any chunk breaks it.
+- **One failed call no longer fails the whole turn.** Each file is isolated: a failing or timed-out call skips only that file, reported as `[skipped]` by `check` / `audit`.
+- **Requests time out** (20 s default, `LEASH_TIMEOUT_MS`), so a hung connection cannot stall an agent's turn.
+- The turn marker moved from `.leash/turn-base` (which showed up in `git status`) into the git dir; the old marker is still read once and then removed.
+
+### Changed
+
+- Files are judged with bounded concurrency (4 at a time) instead of one after another; findings keep diff order.
+- Lockfiles, minified bundles, source maps (`DEFAULT_IGNORE`), binary patches and `.leash/` are never sent to Jev.
+- New exports: `mapLimit`, `Skipped`, `CheckOptions`, `chunkPatch`, `mergeAnswers`, `isBinaryPatch`, `isLeashPath`, `MAX_PATCH_CHARS`, `DEFAULT_IGNORE`, `isIgnored`, `DEFAULT_TIMEOUT_MS`, `worktreeTree`, `writeTurnBase`, `readTurnBase`, `diffToWorktree`.
+- The diff parser now has tests (it had none).
+
 ## [0.6.0] - 2026-10-04
 
 First versioned release. Everything below shipped as internal milestones v0.1 to v0.6 while the package sat at 0.1.0; this release stamps them.
@@ -31,5 +50,6 @@ First versioned release. Everything below shipped as internal milestones v0.1 to
 - Package renamed to `@cmaintz/leash`: the unscoped `leash` name is taken on npm. The `leash` binary is unchanged.
 - `leash version` now reads the version from `package.json` instead of a hardcoded string, so it cannot drift.
 
-[Unreleased]: https://github.com/CMaintz/leash/compare/v0.6.0...HEAD
+[Unreleased]: https://github.com/CMaintz/leash/compare/v0.7.0...HEAD
+[0.7.0]: https://github.com/CMaintz/leash/compare/v0.6.0...v0.7.0
 [0.6.0]: https://github.com/CMaintz/leash/releases/tag/v0.6.0
