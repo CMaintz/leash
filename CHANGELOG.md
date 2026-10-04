@@ -4,6 +4,11 @@ All notable changes to this project are documented here. Format: [Keep a Changel
 
 ## [Unreleased]
 
+### Changed
+
+- Leash dogfoods itself: a committed `.leash/rubric.json` (fail-open, single-purpose functions, no premature abstraction, no silent error swallowing; line length deferred to eslint) guarded on every PR by a new `leash-guard` workflow.
+- README: the "Works with Foundry" section no longer claims a boundary guard that does not exist (Foundry's boundary test covers `scripts/jev`, not Leash); it now states what is true. New "Use in CI" section for `leash guard`.
+
 ## [0.9.0] - 2026-10-04
 
 ### Fixed

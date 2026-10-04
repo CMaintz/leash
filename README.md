@@ -235,8 +235,29 @@ if (provider) {
 
 Leash is designed to plug into [Foundry](https://github.com/CMaintz/foundry) with no
 friction: a deterministic-first compile skips any rule the six-verb gate or habit-hooks
-already enforce, the baseline uses Foundry's ratchet convention, and a boundary guard
-keeps Leash out of `mise run gate`. It is a coach on the proposer side, never an oracle.
+already enforce (`handledBy`), and the baseline uses Foundry's one-way ratchet
+convention. Leash never runs inside `mise run gate`: it runs as agent hooks and on
+demand, and every Jev-backed command exits 0. Only `compile` (malformed rubric) and
+`guard` (loosened rubric) can fail, and both are deterministic, so they are safe in CI.
+It is a coach on the proposer side, never an oracle.
+
+## Use in CI
+
+`leash guard` needs no key and no Jev call: it compares the rubric against the base
+branch and fails if a rule was removed, a threshold raised, or a rule newly deferred.
+That makes "weaken the rules to get a green turn" a visible, reviewable change:
+
+```yaml
+- uses: actions/checkout@v5
+  with: { fetch-depth: 0 }
+- run: npx @cmaintz/leash guard "origin/$BASE_REF"
+  env:
+    BASE_REF: ${{ github.base_ref }}
+```
+
+Leash dogfoods this: its own [`.leash/rubric.json`](.leash/rubric.json) (fail-open,
+single-purpose functions, no premature abstraction, no silent swallow, plus line length
+deferred to eslint) is guarded by the `leash-guard` workflow on every PR.
 
 ## Honest limits
 

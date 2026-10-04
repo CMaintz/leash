@@ -1,0 +1,46 @@
+{
+  "version": 1,
+  "rules": [
+    {
+      "id": "fail-open",
+      "question": "Does this change make a Leash command exit non-zero, throw, or block the agent when the API key is missing, the rubric is missing, or a Jev call fails, instead of staying silent and letting the agent continue?",
+      "phase": "turn",
+      "scope": ["src/**/*.ts"],
+      "repairAt": 0.8,
+      "noteAt": 0.55,
+      "source": "README.md: Honest limits (advisory, fail open)"
+    },
+    {
+      "id": "single-purpose-functions",
+      "question": "Does this change add or grow a function that does more than one job, so that an honest name for it would need the word 'and'?",
+      "phase": "turn",
+      "scope": ["src/**/*.ts"],
+      "repairAt": 0.85,
+      "noteAt": 0.6,
+      "source": "CLAUDE.md conventions: small single-purpose functions"
+    },
+    {
+      "id": "no-premature-abstraction",
+      "question": "Does this change add an abstraction (interface, wrapper, base class, options object) that has only one implementation or one caller?",
+      "phase": "turn",
+      "scope": ["src/**/*.ts"],
+      "repairAt": 0.85,
+      "noteAt": 0.6,
+      "source": "CLAUDE.md conventions"
+    },
+    {
+      "id": "no-silent-swallow",
+      "question": "Does this change catch an error and discard it without surfacing it anywhere (no log line, no skipped-list entry, no rethrow, no comment explaining why)?",
+      "phase": "turn",
+      "scope": ["src/**/*.ts"],
+      "repairAt": 0.8,
+      "noteAt": 0.55,
+      "source": "check.ts: failures are reported as [skipped], never silently"
+    },
+    {
+      "id": "line-length",
+      "question": "Is any line longer than the project's 120-character limit?",
+      "handledBy": "eslint max-len (Foundry base config)"
+    }
+  ]
+}
