@@ -4,9 +4,18 @@ All notable changes to this project are documented here. Format: [Keep a Changel
 
 ## [Unreleased]
 
-### Roadmap
+## [0.8.0] - 2026-10-04
 
-- OpenCode hook adapter (deferred: OpenCode's plugin hooks return `void`, with no same-turn block primitive; waiting for a clean fit rather than shipping a lesser adapter).
+### Added
+
+- **OpenCode adapter.** `leash init --opencode` / `uninstall --opencode` write or remove a generated plugin (`.opencode/plugins/leash.js`, or `~/.config/opencode/plugins/leash.js` globally). OpenCode hooks return `void` - there is no "block the stop" - so the plugin snapshots on each user message (`chat.message`), checks once when the session goes idle (`session.status` idle, or the deprecated `session.idle`), and on a repair-band break sends the reason back as one follow-up prompt via `client.session.prompt`. Loop guard: at most one check and one nudge per user turn, and Leash's own nudge never resets the turn. Verified against the anomalyco/opencode plugin and event schemas; Bun shell semantics (array args, `.cwd().quiet().nothrow()`) checked with a real Bun.
+- **`leash check --json`**: one stable, versioned JSON object (`version`, `base`, `ran`, `reason`, `findings` = new findings only, `skipped`, `decision`) for the OpenCode plugin and CI. It is valid JSON even with no key or rubric (`ran: false`).
+- **`leash check --turn`**: diff against the turn snapshot (what the hooks judge) instead of a base ref.
+
+### Changed
+
+- CLI arguments: flags may now sit anywhere; the first non-flag argument is the base ref / file / sample size.
+- Shared `writeFileEnsuringDir` / `removeIfExists` helpers behind the command and plugin installers.
 
 ## [0.7.0] - 2026-10-04
 
@@ -50,6 +59,7 @@ First versioned release. Everything below shipped as internal milestones v0.1 to
 - Package renamed to `@cmaintz/leash`: the unscoped `leash` name is taken on npm. The `leash` binary is unchanged.
 - `leash version` now reads the version from `package.json` instead of a hardcoded string, so it cannot drift.
 
-[Unreleased]: https://github.com/CMaintz/leash/compare/v0.7.0...HEAD
+[Unreleased]: https://github.com/CMaintz/leash/compare/v0.8.0...HEAD
+[0.8.0]: https://github.com/CMaintz/leash/compare/v0.7.0...v0.8.0
 [0.7.0]: https://github.com/CMaintz/leash/compare/v0.6.0...v0.7.0
 [0.6.0]: https://github.com/CMaintz/leash/releases/tag/v0.6.0
