@@ -12,6 +12,7 @@ import { parseDiff, type FileDiff } from './diff.js';
 import { baselineFrom, findingsForFile, questionsForFile } from './engine.js';
 import { rubricDrift } from './guard.js';
 import { readHookInput, stopDecision } from './hook.js';
+import { writeRubricCommand, removeRubricCommand } from './commands.js';
 import { addLeashHooks, type Host, hostConfigPath, loadSettings, removeLeashHooks, saveSettings } from './install.js';
 import { providerFromEnv } from './provider.js';
 import { parseRubric, type Finding, type Rubric } from './schema.js';
@@ -83,17 +84,20 @@ async function hook(): Promise<void> {
   if (decision.decision) console.log(JSON.stringify(decision));
 }
 
-// Install the Stop + UserPromptSubmit hooks into the host's config (Claude Code or Codex).
+// Install the Stop + UserPromptSubmit hooks into the host's config (Claude Code or Codex),
+// plus the /leash-rubric authoring command (Claude Code only - its command path is known).
 function install(project: boolean, host: Host): void {
   const path = hostConfigPath(host, project);
   saveSettings(path, addLeashHooks(loadSettings(path)));
   console.log(`leash: installed snapshot + hook into ${path}`);
+  if (host === 'claude') console.log(`leash: added /leash-rubric command at ${writeRubricCommand(project)}`);
 }
 
 function uninstallHooks(project: boolean, host: Host): void {
   const path = hostConfigPath(host, project);
   saveSettings(path, removeLeashHooks(loadSettings(path)));
   console.log(`leash: removed hooks from ${path}`);
+  if (host === 'claude') console.log(`leash: removed /leash-rubric command at ${removeRubricCommand(project)}`);
 }
 
 // Flags may appear in any order after the subcommand.

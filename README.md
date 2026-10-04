@@ -56,7 +56,9 @@ stays honest. Advisory and fail-open: no key just prints a skip.
 
 You do not hand-write the rubric from scratch: your coding agent compiles it from your
 `CLAUDE.md` / `AGENTS.md` (no second model involved - see [docs/COMPILE.md](docs/COMPILE.md)),
-then `leash compile` validates it. Rules a linter or the gate already enforce are marked
+then `leash compile` validates it. On Claude Code, `leash init` also installs a
+`/leash-rubric` slash command that walks the agent through exactly that, so first-time
+setup is one command in the editor. Rules a linter or the gate already enforce are marked
 `handledBy` and skipped (deterministic-first), so Jev is spent only where nothing else
 can decide. `leash guard` makes any later weakening of the rubric a red, reviewable check.
 
@@ -95,8 +97,11 @@ leash init --project    # or into this repo's .claude/settings.json
 leash uninstall         # removes them again
 ```
 
-`init` merges into whatever is already there and never duplicates. Under the hood it
-adds the two hooks to `.claude/settings.json`:
+`init` also drops a `/leash-rubric` slash command into `.claude/commands/` (personal, or
+in-repo with `--project`) that drives the authoring procedure in
+[docs/COMPILE.md](docs/COMPILE.md); `uninstall` removes it. It merges into whatever is
+already there and never duplicates. Under the hood it adds the two hooks to
+`.claude/settings.json`:
 
 ```json
 {

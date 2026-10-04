@@ -22,6 +22,7 @@ export {
 } from './engine.js';
 export { readHookInput, stopDecision } from './hook.js';
 export type { StopDecision, StopHookInput } from './hook.js';
+export { RUBRIC_COMMAND, removeRubricCommand, rubricCommandPath, writeRubricCommand } from './commands.js';
 export { addLeashHooks, hostConfigPath, removeLeashHooks } from './install.js';
 export type { ClaudeSettings, Host } from './install.js';
 export { parseRubric } from './schema.js';
