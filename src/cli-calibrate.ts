@@ -1,6 +1,3 @@
-// The `calibrate` command: score each turn-phase rule against the last N commits and
-// flag the ones that never fire. Advisory, exit 0; no key => fail-open skip.
-
 import { execSync } from 'node:child_process';
 import { calibrationReport, tallyFires, type RuleCalibration } from './calibrate.js';
 import { sampleSize } from './cli-args.js';
@@ -18,7 +15,6 @@ export async function calibrate(): Promise<void> {
   printCalibration(report, commits.length);
 }
 
-// Diff of each of the last `sample` commits, parsed into per-file patches.
 function commitDiffs(sample: number): FileDiff[][] {
   const log = execSync(`git log -n ${sample} --format=%H`, { encoding: 'utf8' });
   const shas = log.trim().split('\n').filter(Boolean);

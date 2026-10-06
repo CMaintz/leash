@@ -1,7 +1,3 @@
-// Load and persist leash's on-disk state: the rubric and the accepted-debt baseline
-// under .leash/. All reads fail soft (absent => null/empty) so the advisory CLI never
-// throws on a missing or unreadable file.
-
 import { execSync } from 'node:child_process';
 import { existsSync, mkdirSync, readFileSync, writeFileSync } from 'node:fs';
 import { parseRubric, type Rubric } from './schema.js';
@@ -22,7 +18,6 @@ export function tryLoadRubric(): Rubric | null {
   }
 }
 
-// The rubric as of a git ref, or null if absent/unreadable there (guard then no-ops).
 export function loadRubricAt(ref: string): Rubric | null {
   try {
     const text = execSync(`git show ${ref}:${RUBRIC_PATH}`, { encoding: 'utf8', stdio: ['pipe', 'pipe', 'ignore'] });
