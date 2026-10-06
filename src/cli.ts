@@ -4,28 +4,33 @@
 // into the baseline; `report` lists the rubric. Always exits 0: Leash is advisory.
 
 import { execSync } from 'node:child_process';
-import { existsSync, mkdirSync, readFileSync, writeFileSync } from 'node:fs';
+import { existsSync, readFileSync } from 'node:fs';
 import { createRequire } from 'node:module';
-import { calibrationReport, tallyFires, type RuleCalibration } from './calibrate.js';
-import { checkTurn, type CheckResult, type Skipped } from './check.js';
+import { calibrate } from './cli-calibrate.js';
+import { hasFlag, positional, targetFlag, type Target } from './cli-args.js';
+import { printFindings, printSkipped, skip, skipReason } from './cli-output.js';
+import {
+  BASELINE_PATH,
+  loadBaseline,
+  loadRubric,
+  loadRubricAt,
+  RUBRIC_PATH,
+  tryLoadRubric,
+  writeJson,
+} from './cli-store.js';
+import { checkTurn, type CheckResult } from './check.js';
 import { summarize, type CompileSummary } from './compile.js';
-import { parseDiff, type FileDiff } from './diff.js';
+import { parseDiff } from './diff.js';
 import { baselineFrom, findingsForFile, isIgnored, newFindings, questionsForFile } from './engine.js';
 import { rubricDrift } from './guard.js';
 import { editHookOutput, readHookInput, repoRelative, stopDecision, stopDecisionOnce } from './hook.js';
 import { writeRubricCommand, removeRubricCommand } from './commands.js';
-import { addLeashHooks, type Host, hostConfigPath, loadSettings, removeLeashHooks, saveSettings } from './install.js';
+import { addLeashHooks, hostConfigPath, loadSettings, removeLeashHooks, saveSettings } from './install.js';
 import { removeOpenCodePlugin, writeOpenCodePlugin } from './opencode.js';
 import { isLeashPath } from './patch.js';
 import { providerFromEnv } from './provider.js';
 import { diffToWorktree, readBlocked, readTurnBase, recordBlocked, writeTurnBase } from './snapshot.js';
 import { parseRubric, type Finding, type Rubric } from './schema.js';
-
-const RUBRIC_PATH = '.leash/rubric.json';
-const BASELINE_PATH = '.leash/baseline.json';
-
-/** An install target: a JSON-hooks host, or OpenCode (which takes a plugin file). */
-type Target = Host | 'opencode';
 
 async function main(): Promise<void> {
   const command = process.argv[2] ?? 'help';
@@ -72,10 +77,6 @@ function printCheckJson(base: string, result: CheckResult | null, reason?: strin
   const findings = result?.actionable ?? [];
   const out = { version: 1, base, ran: result !== null, ...(reason ? { reason } : {}) };
   console.log(JSON.stringify({ ...out, findings, skipped: result?.skipped ?? [], decision: stopDecision(findings) }));
-}
-
-function skipReason(rubric: Rubric | null): string {
-  return rubric ? 'no JEV_API_KEY set' : `no rubric at ${RUBRIC_PATH}`;
 }
 
 async function audit(baseRef = 'HEAD'): Promise<void> {
@@ -136,21 +137,6 @@ function packageVersion(): string {
   return pkg.version ?? 'unknown';
 }
 
-// Flags may appear in any order after the subcommand.
-function hasFlag(flag: string): boolean {
-  return process.argv.slice(3).includes(flag);
-}
-
-function targetFlag(): Target {
-  if (hasFlag('--opencode')) return 'opencode';
-  return hasFlag('--codex') ? 'codex' : 'claude';
-}
-
-// The first non-flag argument after the subcommand (a base ref, a file, a sample size).
-function positional(): string | undefined {
-  return process.argv.slice(3).find((arg) => !arg.startsWith('--'));
-}
-
 function report(): void {
   const rubric = loadRubric();
   if (!rubric) return void console.log(`leash: no rubric at ${RUBRIC_PATH}`);
@@ -195,18 +181,6 @@ function guard(baseRef = 'HEAD'): void {
   process.exitCode = 1;
 }
 
-// Score each turn-phase rule against the last N commits (default 20) and flag the
-// ones that never fire. Advisory, exit 0; no key => fail-open skip.
-async function calibrate(): Promise<void> {
-  const rubric = loadRubric();
-  const provider = providerFromEnv();
-  if (!rubric || !provider) return skip(rubric, provider);
-  const commits = commitDiffs(sampleSize());
-  const report = calibrationReport(await tallyFires(provider, rubric, commits), commits.length);
-  printCalibration(report, commits.length);
-}
-
-// Opt-in edit-phase check for one file's working-tree diff. Advisory, exit 0.
 // Opt-in edit-phase check for one file's working-tree diff. Advisory, exit 0.
 async function editCheck(file?: string): Promise<void> {
   if (!file) return void console.log('usage: leash edit-check <file>');
@@ -238,85 +212,6 @@ async function editFindings(file: string): Promise<Finding[] | null> {
 
 function repoRoot(): string {
   return execSync('git rev-parse --show-toplevel', { encoding: 'utf8' }).trim();
-}
-
-// Diff of each of the last `sample` commits, parsed into per-file patches.
-function commitDiffs(sample: number): FileDiff[][] {
-  const log = execSync(`git log -n ${sample} --format=%H`, { encoding: 'utf8' });
-  const shas = log.trim().split('\n').filter(Boolean);
-  return shas.map((sha) =>
-    parseDiff(execSync(`git show ${sha} --format=`, { encoding: 'utf8', maxBuffer: 32 * 1024 * 1024 })),
-  );
-}
-
-// `--sample N` or a bare N after the command; defaults to 20.
-function sampleSize(): number {
-  const args = process.argv.slice(3);
-  const flagged = args.indexOf('--sample');
-  const raw = flagged >= 0 ? args[flagged + 1] : args[0];
-  const n = Number(raw);
-  return Number.isFinite(n) && n > 0 ? Math.floor(n) : 20;
-}
-
-function printCalibration(report: RuleCalibration[], sample: number): void {
-  if (report.length === 0) return void console.log('leash: no active turn-phase rules to calibrate.');
-  console.log(`leash: calibrated ${report.length} rule(s) over ${sample} commit(s).`);
-  for (const r of [...report].sort((a, b) => a.rate - b.rate)) {
-    console.log(`  ${r.dead ? 'DEAD' : '    '} ${r.rule}: ${r.fires}/${sample} (${Math.round(r.rate * 100)}%)`);
-  }
-  const dead = report.filter((r) => r.dead).map((r) => r.rule);
-  if (dead.length) console.log(`\nleash: ${dead.length} rule(s) never fired - reword or remove: ${dead.join(', ')}`);
-}
-
-function printFindings(findings: Finding[]): void {
-  if (findings.length === 0) return void console.log('leash: no new rule breaks this turn.');
-  const repairs = findings.filter((f) => f.band === 'repair');
-  for (const f of findings) console.log(`  [${f.band}] ${f.message}`);
-  if (repairs.length) console.log(`\nleash: repair ${repairs.length} rule break(s) above, then continue.`);
-}
-
-function skip(rubric: Rubric | null, provider: unknown): void {
-  if (!rubric) console.log(`leash: no rubric at ${RUBRIC_PATH} - nothing to check.`);
-  if (!provider) console.log('leash: no JEV_API_KEY set - skipping (fail open).');
-}
-
-// Files whose Jev call failed are judged clean (fail open) but never silently.
-function printSkipped(skipped: Skipped[]): void {
-  for (const s of skipped) console.log(`  [skipped] ${s.file}: ${s.reason}`);
-}
-
-function loadRubric(): Rubric | null {
-  if (!existsSync(RUBRIC_PATH)) return null;
-  return parseRubric(JSON.parse(readFileSync(RUBRIC_PATH, 'utf8')));
-}
-
-function tryLoadRubric(): Rubric | null {
-  try {
-    return loadRubric();
-  } catch {
-    return null;
-  }
-}
-
-// The rubric as of a git ref, or null if absent/unreadable there (guard then no-ops).
-function loadRubricAt(ref: string): Rubric | null {
-  try {
-    const text = execSync(`git show ${ref}:${RUBRIC_PATH}`, { encoding: 'utf8', stdio: ['pipe', 'pipe', 'ignore'] });
-    return parseRubric(JSON.parse(text));
-  } catch {
-    return null;
-  }
-}
-
-function loadBaseline(): string[] {
-  if (!existsSync(BASELINE_PATH)) return [];
-  const parsed: unknown = JSON.parse(readFileSync(BASELINE_PATH, 'utf8'));
-  return Array.isArray(parsed) ? parsed.filter((x): x is string => typeof x === 'string') : [];
-}
-
-function writeJson(path: string, value: unknown): void {
-  mkdirSync('.leash', { recursive: true });
-  writeFileSync(path, `${JSON.stringify(value, null, 2)}\n`);
 }
 
 main().catch((err: unknown) => {
