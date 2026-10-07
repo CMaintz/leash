@@ -5,6 +5,9 @@ Leash does not call a second model to read your rules. The coding agent writes
 shows the deterministic-first split. This is the whole compile step: agent authors,
 CLI checks.
 
+On Claude Code, `leash init` installs a `/leash-rubric` slash command that runs the
+procedure below for you; run it in the editor instead of pasting these steps by hand.
+
 ## The procedure (for the agent)
 
 1. Read the project's instruction files (`CLAUDE.md`, `AGENTS.md`, and any linked

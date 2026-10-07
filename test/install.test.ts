@@ -24,6 +24,21 @@ describe('addLeashHooks', () => {
   });
 });
 
+describe('edit phase (opt-in)', () => {
+  it('is not wired by default', () => {
+    expect(addLeashHooks({}).hooks?.PostToolUse).toBeUndefined();
+  });
+
+  it('adds a matched PostToolUse group, idempotently, and uninstall removes it', () => {
+    const once = addLeashHooks({}, { editPhase: true });
+    const group = once.hooks?.PostToolUse?.[0];
+    expect(group?.matcher).toBe('Edit|Write|MultiEdit');
+    expect(group?.hooks?.[0]?.command).toBe('leash edit-hook');
+    expect(addLeashHooks(once, { editPhase: true }).hooks?.PostToolUse).toHaveLength(1);
+    expect(removeLeashHooks(once).hooks?.PostToolUse).toBeUndefined();
+  });
+});
+
 describe('hostConfigPath', () => {
   it('maps each host to its project config file', () => {
     expect(hostConfigPath('claude', true).replace(/\\/g, '/')).toBe('.claude/settings.json');

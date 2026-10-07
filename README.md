@@ -44,6 +44,7 @@ leash report              # list the rules in .leash/rubric.json
 leash compile             # validate the rubric, show the active vs deferred split
 leash audit               # accept the current diff's findings into the baseline
 leash check [baseRef]     # print what this turn newly broke (default base: HEAD)
+                          #   --turn: since the turn snapshot; --json: machine-readable
 leash guard [baseRef]     # fail if the rubric was loosened vs baseRef (for CI)
 leash calibrate [N]       # score rules against the last N commits (default 20); flag dead ones
 leash edit-check <file>   # opt-in per-edit check of one file (see below)
@@ -56,7 +57,9 @@ stays honest. Advisory and fail-open: no key just prints a skip.
 
 You do not hand-write the rubric from scratch: your coding agent compiles it from your
 `CLAUDE.md` / `AGENTS.md` (no second model involved - see [docs/COMPILE.md](docs/COMPILE.md)),
-then `leash compile` validates it. Rules a linter or the gate already enforce are marked
+then `leash compile` validates it. On Claude Code, `leash init` also installs a
+`/leash-rubric` slash command that walks the agent through exactly that, so first-time
+setup is one command in the editor. Rules a linter or the gate already enforce are marked
 `handledBy` and skipped (deterministic-first), so Jev is spent only where nothing else
 can decide. `leash guard` makes any later weakening of the rubric a red, reviewable check.
 
@@ -95,8 +98,11 @@ leash init --project    # or into this repo's .claude/settings.json
 leash uninstall         # removes them again
 ```
 
-`init` merges into whatever is already there and never duplicates. Under the hood it
-adds the two hooks to `.claude/settings.json`:
+`init` also drops a `/leash-rubric` slash command into `.claude/commands/` (personal, or
+in-repo with `--project`) that drives the authoring procedure in
+[docs/COMPILE.md](docs/COMPILE.md); `uninstall` removes it. It merges into whatever is
+already there and never duplicates. Under the hood it adds the two hooks to
+`.claude/settings.json`:
 
 ```json
 {
@@ -107,31 +113,52 @@ adds the two hooks to `.claude/settings.json`:
 }
 ```
 
-`leash snapshot` records the pre-turn state; `leash hook` reads the Stop payload, diffs
-against that snapshot, and prints `{"decision":"block","reason":...}` only when a turn
-newly breaks a repair-band rule. No key or no rubric means it stays silent and lets the
-agent stop (fail open).
+`leash snapshot` records the pre-turn state as a git tree of the whole working tree -
+tracked **and untracked** files, minus anything `.gitignore`d - built in a scratch index
+so your real index is never touched, and stored in the git dir rather than your working
+tree. `leash hook` reads the Stop payload, diffs against that snapshot (so files the
+agent created this turn are judged too), and prints `{"decision":"block","reason":...}`
+only when a turn newly breaks a repair-band rule. No key or no rubric means it stays
+silent and lets the agent stop (fail open).
+
+Every Stop is checked, including the continuation after a block - that is when the
+agent's repair gets verified, and when a repair that breaks something else gets caught.
+But Leash blocks **at most once per finding per turn**: a rule it already flagged in this
+turn never blocks again (so a finding Jev keeps wrongly reporting cannot loop), and only
+genuinely new breaks can. The record lives in the git dir and resets on the next prompt.
+(Claude Code's own cap of 8 consecutive continuations still applies on top.)
+
+One side effect to know: building the snapshot hashes untracked, non-ignored files into
+`.git/objects` (the same thing `git add` would do; nothing is committed, and `git gc`
+prunes the objects later). Keep secrets in `.gitignore`d files, as you would anyway.
 
 ### Opt-in: per-edit checks (off by default)
 
-For rules with `"phase": "edit"`, `leash edit-check <file>` judges a single file right
-after it is written. It is deliberately **not** installed by `leash init`, because at
-Jev's edit-level precision a per-edit auto-repair loop risks the agent chasing phantoms -
-turn checks are the default for a reason. If you want it anyway, wire it yourself as a
-`PostToolUse` hook (it stays silent without a key or edit-phase rules):
+For rules with `"phase": "edit"`, Leash can judge each file right after Claude writes it.
+It is **not** wired by default: at Jev's edit-level precision, per-edit feedback risks the
+agent chasing phantoms, which is why turn checks are the default. Opt in with:
+
+```
+leash init --edit-phase           # adds a PostToolUse hook for Edit|Write|MultiEdit
+```
+
+That adds:
 
 ```json
 {
   "hooks": {
     "PostToolUse": [
-      {
-        "matcher": "Edit|Write|MultiEdit",
-        "hooks": [{ "type": "command", "command": "leash edit-check \"$CLAUDE_FILE_PATH\"" }]
-      }
+      { "matcher": "Edit|Write|MultiEdit", "hooks": [{ "type": "command", "command": "leash edit-hook" }] }
     ]
   }
 }
 ```
+
+`leash edit-hook` reads the edited path from the hook payload (`tool_input.file_path`),
+checks only that file's diff against edit-phase rules, subtracts the ratchet baseline, and
+on a repair-band break returns it as `additionalContext` - advisory text Claude sees and
+weighs, never a block. It stays silent without a key, without edit-phase rules, or for files
+outside the repo. To check one file by hand, use `leash edit-check <file>`.
 
 ## Codex (turn hook)
 
@@ -148,21 +175,58 @@ leash uninstall --codex
 
 It writes the same `snapshot` + `hook` pair. Codex loads hooks straight from that
 `hooks.json` (no separate enable flag), so `leash init --codex` is all it takes; a
-project-local `.codex/` must be trusted first. Leash reads Codex's `stop_hook_active`
-flag and will not re-block a turn Codex has already nudged once, so there is no loop.
+project-local `.codex/` must be trusted first. The same once-per-finding rule as on
+Claude Code applies, so continuations are re-checked but nothing can loop.
 The contract is checked against Codex's own generated schemas (`stop.command.input` /
 `stop.command.output`): the `Stop` input carries `cwd` + `stop_hook_active`, and a
 `{"decision":"block","reason":...}` reply forces continuation, same as Claude Code. No
 key or no rubric still means silent fail-open.
 
-### OpenCode
+## OpenCode (plugin)
 
-Not yet wired, on purpose. OpenCode's plugin hooks return `void` and have no same-turn
-"block the stop and keep working" primitive the way Claude Code and Codex do; the only
-levers are a hard `tool.execute.before` block (that is jev-guard's job, not Leash's
-advisory turn coaching) or re-prompting the session through the SDK on `session.idle`
-(loop-prone, and a different product). Rather than ship a guessed, lesser adapter, Leash
-waits for a clean fit. The library core is host-agnostic, so adding one later is small.
+OpenCode's plugin hooks return `void`, so there is no Claude/Codex-style "block the stop".
+Leash does the closest honest thing: a generated plugin that re-prompts once.
+
+```
+leash init --opencode             # writes ~/.config/opencode/plugins/leash.js
+leash init --opencode --project   # or this repo's .opencode/plugins/leash.js
+leash uninstall --opencode
+```
+
+The plugin runs `leash snapshot` on each user message, and when the session goes idle it
+runs `leash check --turn --json` once. On a repair-band break it sends the reason back
+into the session as a single follow-up prompt (`client.session.prompt`), so the agent
+repairs it in a new turn rather than the same one. Loop guard: at most one check and
+one nudge per user turn (the repair turn is not re-checked, unlike Claude Code / Codex), and Leash's own nudge
+never resets the turn. It needs `leash` on `PATH` (a global install); if it is missing,
+the plugin fails open and stays silent.
+
+## Machine-readable checks
+
+`leash check --json` prints one stable JSON object - the contract the OpenCode plugin and
+CI consume. `--turn` diffs against the turn snapshot instead of a base ref:
+
+```json
+{
+  "version": 1,
+  "base": "HEAD",
+  "ran": true,
+  "findings": [
+    {
+      "ruleId": "no-premature-abstraction",
+      "file": "src/new.ts",
+      "probability": 0.93,
+      "band": "repair",
+      "message": "..."
+    }
+  ],
+  "skipped": [],
+  "decision": { "decision": "block", "reason": "Leash: this turn broke 1 project rule(s): ..." }
+}
+```
+
+`findings` are only the new (non-baselined) ones. With no key or no rubric it still prints
+valid JSON: `"ran": false`, a `reason`, empty `findings`, and an empty `decision`.
 
 ## Library
 
@@ -182,14 +246,39 @@ if (provider) {
 
 Leash is designed to plug into [Foundry](https://github.com/CMaintz/foundry) with no
 friction: a deterministic-first compile skips any rule the six-verb gate or habit-hooks
-already enforce, the baseline uses Foundry's ratchet convention, and a boundary guard
-keeps Leash out of `mise run gate`. It is a coach on the proposer side, never an oracle.
+already enforce (`handledBy`), and the baseline uses Foundry's one-way ratchet
+convention. Leash never runs inside `mise run gate`: it runs as agent hooks and on
+demand, and every Jev-backed command exits 0. Only `compile` (malformed rubric) and
+`guard` (loosened rubric) can fail, and both are deterministic, so they are safe in CI.
+It is a coach on the proposer side, never an oracle.
+
+## Use in CI
+
+`leash guard` needs no key and no Jev call: it compares the rubric against the base
+branch and fails if a rule was removed, a threshold raised, or a rule newly deferred.
+That makes "weaken the rules to get a green turn" a visible, reviewable change:
+
+```yaml
+- uses: actions/checkout@v5
+  with: { fetch-depth: 0 }
+- run: npx @cmaintz/leash guard "origin/$BASE_REF"
+  env:
+    BASE_REF: ${{ github.base_ref }}
+```
+
+Leash dogfoods this: its own [`.leash/rubric.json`](.leash/rubric.json) (fail-open,
+single-purpose functions, no premature abstraction, no silent swallow, plus line length
+deferred to eslint) is guarded by the `leash-guard` workflow on every PR.
 
 ## Honest limits
 
 Jev is about 68% accurate, so Leash is advisory: it never blocks a commit or fails a
 build. It says which rule and how likely, never why or how many; the agent supplies the
-fix. Text-only, so it judges per file and chunks large diffs.
+fix. Text-only, so it judges per file (up to 4 files in parallel) and splits a patch too
+large for one call into hunk-sized chunks, flagging a rule if any chunk breaks it.
+Lockfiles, minified bundles, source maps, binary files and `.leash/` itself are never
+sent. A call that fails or times out (20 s, `LEASH_TIMEOUT_MS` to change) skips only
+that file: `leash check` lists it as `[skipped]`, and the Stop hook lets the turn through.
 
 ## Contributing
 

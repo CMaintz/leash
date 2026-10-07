@@ -1,0 +1,23 @@
+# Dogfood: Leash judges its own turns against .leash/rubric.json, and this check makes
+# any loosening of that rubric (a removed rule, a raised threshold, a newly deferred rule)
+# a red, reviewable PR check. Deterministic - no Jev call, no key needed.
+name: leash-guard
+on: { pull_request: {} }
+permissions: { contents: read }
+jobs:
+  guard:
+    name: Rubric not loosened
+    runs-on: ubuntu-latest
+    steps:
+      - uses: actions/checkout@fbc6f3992d24b796d5a048ff273f7fcc4a7b6c09 # v5
+        with:
+          fetch-depth: 0 # guard reads the rubric as of the base branch
+      - uses: jdx/mise-action@5228313ee0372e111a38da051671ca30fc5a96db # v3
+        with:
+          version: "2026.9.2" # pin mise itself, not just the action
+      - run: npm ci
+      - run: npm run build
+      - name: leash guard
+        env:
+          BASE_REF: ${{ github.base_ref }}
+        run: node dist/cli.js guard "origin/$BASE_REF"

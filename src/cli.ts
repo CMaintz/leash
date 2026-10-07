@@ -4,24 +4,37 @@
 // into the baseline; `report` lists the rubric. Always exits 0: Leash is advisory.
 
 import { execSync } from 'node:child_process';
-import { existsSync, mkdirSync, readFileSync, writeFileSync } from 'node:fs';
-import { calibrationReport, tallyFires, type RuleCalibration } from './calibrate.js';
-import { checkTurn } from './check.js';
+import { existsSync, readFileSync } from 'node:fs';
+import { createRequire } from 'node:module';
+import { calibrate } from './cli-calibrate.js';
+import { hasFlag, positional, targetFlag, type Target } from './cli-args.js';
+import { printFindings, printSkipped, skip, skipReason } from './cli-output.js';
+import {
+  BASELINE_PATH,
+  loadBaseline,
+  loadRubric,
+  loadRubricAt,
+  RUBRIC_PATH,
+  tryLoadRubric,
+  writeJson,
+} from './cli-store.js';
+import { checkTurn, type CheckResult } from './check.js';
 import { summarize, type CompileSummary } from './compile.js';
-import { parseDiff, type FileDiff } from './diff.js';
-import { baselineFrom, findingsForFile, questionsForFile } from './engine.js';
+import { parseDiff } from './diff.js';
+import { baselineFrom, findingsForFile, isIgnored, newFindings, questionsForFile } from './engine.js';
 import { rubricDrift } from './guard.js';
-import { readHookInput, stopDecision } from './hook.js';
-import { addLeashHooks, type Host, hostConfigPath, loadSettings, removeLeashHooks, saveSettings } from './install.js';
+import { editHookOutput, readHookInput, repoRelative, stopDecision, stopDecisionOnce } from './hook.js';
+import { writeRubricCommand, removeRubricCommand } from './commands.js';
+import { addLeashHooks, hostConfigPath, loadSettings, removeLeashHooks, saveSettings } from './install.js';
+import { removeOpenCodePlugin, writeOpenCodePlugin } from './opencode.js';
+import { isLeashPath } from './patch.js';
 import { providerFromEnv } from './provider.js';
+import { diffToWorktree, readBlocked, readTurnBase, recordBlocked, writeTurnBase } from './snapshot.js';
 import { parseRubric, type Finding, type Rubric } from './schema.js';
 
-const RUBRIC_PATH = '.leash/rubric.json';
-const BASELINE_PATH = '.leash/baseline.json';
-const TURN_BASE_PATH = '.leash/turn-base';
-
 async function main(): Promise<void> {
-  const [command = 'help', arg] = process.argv.slice(2);
+  const command = process.argv[2] ?? 'help';
+  const arg = positional();
   const commands: Record<string, () => Promise<void> | void> = {
     check: () => check(arg),
     audit: () => audit(arg),
@@ -32,77 +45,96 @@ async function main(): Promise<void> {
     'edit-check': () => editCheck(arg),
     snapshot: () => snapshot(),
     hook: () => hook(),
-    init: () => install(hasFlag('--project'), hostFlag()),
-    uninstall: () => uninstallHooks(hasFlag('--project'), hostFlag()),
-    version: () => console.log('leash 0.1.0'),
+    'edit-hook': () => editHook(),
+    init: () => install(hasFlag('--project'), targetFlag()),
+    uninstall: () => uninstallHooks(hasFlag('--project'), targetFlag()),
+    version: () => console.log(`leash ${packageVersion()}`),
     help: () =>
       console.log(
         'leash <check|audit|report|compile|guard|calibrate|edit-check|init|uninstall> [arg]\n' +
-          '  init/uninstall flags: --project (this repo, default global), --codex (Codex, default Claude Code)',
+          '  check flags: --turn (diff since the turn snapshot), --json (machine-readable result)\n' +
+          '  init/uninstall flags: --project (this repo, default global); --codex or --opencode (default Claude Code); --edit-phase (also wire the per-edit check)',
       ),
   };
   await (commands[command] ?? commands.help)!();
 }
 
-async function check(baseRef = 'HEAD'): Promise<void> {
+// `--turn` diffs since the turn snapshot (what the hooks judge); `--json` prints a stable
+// machine-readable result (the OpenCode plugin and CI consume it).
+async function check(baseRef?: string): Promise<void> {
+  const base = hasFlag('--turn') ? readTurnBase() : (baseRef ?? 'HEAD');
+  const json = hasFlag('--json');
   const rubric = loadRubric();
   const provider = providerFromEnv();
-  if (!rubric || !provider) return skip(rubric, provider);
-  const diffs = parseDiff(gitDiff(baseRef));
-  const { actionable } = await checkTurn(provider, rubric, diffs, loadBaseline());
-  printFindings(actionable);
+  if (!rubric || !provider) return json ? printCheckJson(base, null, skipReason(rubric)) : skip(rubric, provider);
+  const result = await checkTurn(provider, rubric, parseDiff(diffToWorktree(base)), loadBaseline());
+  if (json) return printCheckJson(base, result);
+  printFindings(result.actionable);
+  printSkipped(result.skipped);
+}
+
+function printCheckJson(base: string, result: CheckResult | null, reason?: string): void {
+  const findings = result?.actionable ?? [];
+  const out = { version: 1, base, ran: result !== null, ...(reason ? { reason } : {}) };
+  console.log(JSON.stringify({ ...out, findings, skipped: result?.skipped ?? [], decision: stopDecision(findings) }));
 }
 
 async function audit(baseRef = 'HEAD'): Promise<void> {
   const rubric = loadRubric();
   const provider = providerFromEnv();
   if (!rubric || !provider) return skip(rubric, provider);
-  const { findings } = await checkTurn(provider, rubric, parseDiff(gitDiff(baseRef)), []);
+  const { findings, skipped } = await checkTurn(provider, rubric, parseDiff(diffToWorktree(baseRef)), []);
   writeJson(BASELINE_PATH, baselineFrom(findings));
   console.log(`leash: accepted ${findings.length} finding(s) into ${BASELINE_PATH}`);
+  printSkipped(skipped);
 }
 
-// UserPromptSubmit hook: snapshot the working tree so the Stop hook can diff just
-// this turn's changes. `git stash create` records index + working tree without
-// touching them; empty output means nothing uncommitted, so fall back to HEAD.
+// UserPromptSubmit hook: snapshot the whole working tree (untracked files included) so
+// the Stop hook can diff exactly this turn's changes. See snapshot.ts.
 function snapshot(): void {
-  const ref = execSync('git stash create', { encoding: 'utf8' }).trim() || 'HEAD';
-  mkdirSync('.leash', { recursive: true });
-  writeFileSync(TURN_BASE_PATH, `${ref}\n`);
+  writeTurnBase();
 }
 
-// Stop hook: check what changed since the snapshot; block only on repair-band breaks.
+// Stop hook: check what changed since the snapshot and block on new repair-band breaks.
+// Every Stop is checked, continuations included (that is when a repair gets verified);
+// a finding already blocked on this turn never blocks again, so nothing can loop.
 async function hook(): Promise<void> {
-  const input = await readHookInput(); // the hook already runs in cwd; we only read flags
-  if (input.stop_hook_active) return; // Codex already forced one continuation; don't re-block
+  await readHookInput(); // drain the payload; the turn state lives in the git dir
   const rubric = loadRubric();
   const provider = providerFromEnv();
   if (!rubric || !provider) return; // fail open, silent: allow the stop
-  const { actionable } = await checkTurn(provider, rubric, parseDiff(gitDiff(turnBase())), loadBaseline());
-  const decision = stopDecision(actionable);
-  if (decision.decision) console.log(JSON.stringify(decision));
+  const base = readTurnBase();
+  const { actionable } = await checkTurn(provider, rubric, parseDiff(diffToWorktree(base)), loadBaseline());
+  const { decision, blocked } = stopDecisionOnce(actionable, readBlocked(base));
+  if (!decision.decision) return;
+  recordBlocked(base, blocked);
+  console.log(JSON.stringify(decision));
 }
 
-// Install the Stop + UserPromptSubmit hooks into the host's config (Claude Code or Codex).
-function install(project: boolean, host: Host): void {
+// Install the Stop + UserPromptSubmit hooks into the host's config (Claude Code or Codex),
+// plus the /leash-rubric authoring command (Claude Code only - its command path is known).
+// OpenCode takes a plugin file instead (see opencode.ts).
+function install(project: boolean, host: Target): void {
+  if (host === 'opencode') return void console.log(`leash: added OpenCode plugin at ${writeOpenCodePlugin(project)}`);
   const path = hostConfigPath(host, project);
-  saveSettings(path, addLeashHooks(loadSettings(path)));
+  saveSettings(path, addLeashHooks(loadSettings(path), { editPhase: hasFlag('--edit-phase') }));
   console.log(`leash: installed snapshot + hook into ${path}`);
+  if (host === 'claude') console.log(`leash: added /leash-rubric command at ${writeRubricCommand(project)}`);
 }
 
-function uninstallHooks(project: boolean, host: Host): void {
+function uninstallHooks(project: boolean, host: Target): void {
+  if (host === 'opencode')
+    return void console.log(`leash: removed OpenCode plugin at ${removeOpenCodePlugin(project)}`);
   const path = hostConfigPath(host, project);
   saveSettings(path, removeLeashHooks(loadSettings(path)));
   console.log(`leash: removed hooks from ${path}`);
+  if (host === 'claude') console.log(`leash: removed /leash-rubric command at ${removeRubricCommand(project)}`);
 }
 
-// Flags may appear in any order after the subcommand.
-function hasFlag(flag: string): boolean {
-  return process.argv.slice(3).includes(flag);
-}
-
-function hostFlag(): Host {
-  return hasFlag('--codex') ? 'codex' : 'claude';
+// The version from package.json (always shipped), so the CLI can never drift from it.
+function packageVersion(): string {
+  const pkg = createRequire(import.meta.url)('../package.json') as { version?: string };
+  return pkg.version ?? 'unknown';
 }
 
 function report(): void {
@@ -149,110 +181,37 @@ function guard(baseRef = 'HEAD'): void {
   process.exitCode = 1;
 }
 
-// Score each turn-phase rule against the last N commits (default 20) and flag the
-// ones that never fire. Advisory, exit 0; no key => fail-open skip.
-async function calibrate(): Promise<void> {
-  const rubric = loadRubric();
-  const provider = providerFromEnv();
-  if (!rubric || !provider) return skip(rubric, provider);
-  const commits = commitDiffs(sampleSize());
-  const report = calibrationReport(await tallyFires(provider, rubric, commits), commits.length);
-  printCalibration(report, commits.length);
-}
-
 // Opt-in edit-phase check for one file's working-tree diff. Advisory, exit 0.
 async function editCheck(file?: string): Promise<void> {
   if (!file) return void console.log('usage: leash edit-check <file>');
+  const findings = await editFindings(file);
+  if (findings === null) return skip(loadRubric(), providerFromEnv());
+  printFindings(findings);
+}
+
+// PostToolUse hook (`init --edit-phase`): judge the file Claude just edited and hand any
+// repair-band break back as context Claude can see. Silent on everything else.
+async function editHook(): Promise<void> {
+  const path = (await readHookInput()).tool_input?.file_path;
+  const file = path ? repoRelative(path, repoRoot()) : null;
+  if (!file) return;
+  const out = editHookOutput((await editFindings(file)) ?? []);
+  if (out.hookSpecificOutput) console.log(JSON.stringify(out));
+}
+
+// New (non-baselined) edit-phase findings for `file`; null when there is no rubric or key.
+async function editFindings(file: string): Promise<Finding[] | null> {
   const rubric = loadRubric();
   const provider = providerFromEnv();
-  if (!rubric || !provider) return skip(rubric, provider);
+  if (!rubric || !provider) return null;
   const questions = questionsForFile(rubric, file, 'edit');
-  if (Object.keys(questions).length === 0) return void console.log(`leash: no edit-phase rules for ${file}.`);
-  const { answers } = await provider.evaluate({ state: { file, diff: gitDiff(`HEAD -- ${file}`) }, questions });
-  printFindings(findingsForFile(rubric, file, answers, 'edit'));
+  if (isLeashPath(file) || isIgnored(file) || Object.keys(questions).length === 0) return [];
+  const { answers } = await provider.evaluate({ state: { file, diff: diffToWorktree('HEAD', file) }, questions });
+  return newFindings(findingsForFile(rubric, file, answers, 'edit'), loadBaseline());
 }
 
-// Diff of each of the last `sample` commits, parsed into per-file patches.
-function commitDiffs(sample: number): FileDiff[][] {
-  const log = execSync(`git log -n ${sample} --format=%H`, { encoding: 'utf8' });
-  const shas = log.trim().split('\n').filter(Boolean);
-  return shas.map((sha) =>
-    parseDiff(execSync(`git show ${sha} --format=`, { encoding: 'utf8', maxBuffer: 32 * 1024 * 1024 })),
-  );
-}
-
-// `--sample N` or a bare N after the command; defaults to 20.
-function sampleSize(): number {
-  const args = process.argv.slice(3);
-  const flagged = args.indexOf('--sample');
-  const raw = flagged >= 0 ? args[flagged + 1] : args[0];
-  const n = Number(raw);
-  return Number.isFinite(n) && n > 0 ? Math.floor(n) : 20;
-}
-
-function printCalibration(report: RuleCalibration[], sample: number): void {
-  if (report.length === 0) return void console.log('leash: no active turn-phase rules to calibrate.');
-  console.log(`leash: calibrated ${report.length} rule(s) over ${sample} commit(s).`);
-  for (const r of [...report].sort((a, b) => a.rate - b.rate)) {
-    console.log(`  ${r.dead ? 'DEAD' : '    '} ${r.rule}: ${r.fires}/${sample} (${Math.round(r.rate * 100)}%)`);
-  }
-  const dead = report.filter((r) => r.dead).map((r) => r.rule);
-  if (dead.length) console.log(`\nleash: ${dead.length} rule(s) never fired - reword or remove: ${dead.join(', ')}`);
-}
-
-function printFindings(findings: Finding[]): void {
-  if (findings.length === 0) return void console.log('leash: no new rule breaks this turn.');
-  const repairs = findings.filter((f) => f.band === 'repair');
-  for (const f of findings) console.log(`  [${f.band}] ${f.message}`);
-  if (repairs.length) console.log(`\nleash: repair ${repairs.length} rule break(s) above, then continue.`);
-}
-
-function skip(rubric: Rubric | null, provider: unknown): void {
-  if (!rubric) console.log(`leash: no rubric at ${RUBRIC_PATH} - nothing to check.`);
-  if (!provider) console.log('leash: no JEV_API_KEY set - skipping (fail open).');
-}
-
-function gitDiff(baseRef: string): string {
-  return execSync(`git diff ${baseRef}`, { encoding: 'utf8', maxBuffer: 32 * 1024 * 1024 });
-}
-
-function turnBase(): string {
-  if (!existsSync(TURN_BASE_PATH)) return 'HEAD';
-  return readFileSync(TURN_BASE_PATH, 'utf8').trim() || 'HEAD';
-}
-
-function loadRubric(): Rubric | null {
-  if (!existsSync(RUBRIC_PATH)) return null;
-  return parseRubric(JSON.parse(readFileSync(RUBRIC_PATH, 'utf8')));
-}
-
-function tryLoadRubric(): Rubric | null {
-  try {
-    return loadRubric();
-  } catch {
-    return null;
-  }
-}
-
-// The rubric as of a git ref, or null if absent/unreadable there (guard then no-ops).
-function loadRubricAt(ref: string): Rubric | null {
-  try {
-    const text = execSync(`git show ${ref}:${RUBRIC_PATH}`, { encoding: 'utf8', stdio: ['pipe', 'pipe', 'ignore'] });
-    return parseRubric(JSON.parse(text));
-  } catch {
-    return null;
-  }
-}
-
-function loadBaseline(): string[] {
-  if (!existsSync(BASELINE_PATH)) return [];
-  const parsed: unknown = JSON.parse(readFileSync(BASELINE_PATH, 'utf8'));
-  return Array.isArray(parsed) ? parsed.filter((x): x is string => typeof x === 'string') : [];
-}
-
-function writeJson(path: string, value: unknown): void {
-  mkdirSync('.leash', { recursive: true });
-  writeFileSync(path, `${JSON.stringify(value, null, 2)}\n`);
+function repoRoot(): string {
+  return execSync('git rev-parse --show-toplevel', { encoding: 'utf8' }).trim();
 }
 
 main().catch((err: unknown) => {
