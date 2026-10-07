@@ -1,0 +1,43 @@
+# Publish to npm and cut the GitHub release when a version tag is pushed.
+# Flow: bump package.json + CHANGELOG in a PR, merge, then `git tag vX.Y.Z && git push --tags`.
+# Needs an NPM_TOKEN repo secret (an npm automation token for the @cmaintz scope).
+name: release
+on:
+  push:
+    tags: ["v*.*.*"]
+permissions:
+  contents: write # create the GitHub release
+  id-token: write # npm provenance
+jobs:
+  publish:
+    name: Publish to npm
+    runs-on: ubuntu-latest
+    steps:
+      - uses: actions/checkout@fbc6f3992d24b796d5a048ff273f7fcc4a7b6c09 # v5
+      - uses: jdx/mise-action@5228313ee0372e111a38da051671ca30fc5a96db # v3
+        with:
+          version: "2026.9.2" # pin mise itself, not just the action
+      - name: Tag must match package.json
+        run: |
+          set -euo pipefail
+          v="$(node -p "require('./package.json').version")"
+          [ "v$v" = "$GITHUB_REF_NAME" ] || { echo "::error::tag $GITHUB_REF_NAME != package.json v$v"; exit 1; }
+      - run: npm ci
+      - name: Gate (same verbs as CI)
+        run: mise run lint && mise run typecheck && mise run test
+      - name: Publish
+        env:
+          NPM_TOKEN: ${{ secrets.NPM_TOKEN }}
+        run: |
+          set -euo pipefail
+          [ -n "$NPM_TOKEN" ] || { echo "::error::NPM_TOKEN secret is not set"; exit 1; }
+          echo "//registry.npmjs.org/:_authToken=${NPM_TOKEN}" > ~/.npmrc
+          npm publish --provenance --access public
+      - name: GitHub release from the CHANGELOG section
+        env:
+          GH_TOKEN: ${{ github.token }}
+        run: |
+          set -euo pipefail
+          v="${GITHUB_REF_NAME#v}"
+          awk -v v="$v" 'index($0, "## [" v "]") == 1 {on=1; next} on && /^## \[/ {exit} on' CHANGELOG.md > notes.md
+          gh release create "$GITHUB_REF_NAME" --title "$GITHUB_REF_NAME" --notes-file notes.md
