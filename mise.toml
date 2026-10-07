@@ -5,8 +5,24 @@
 node = "22.14.0" # pin to whatever the repo actually uses
 
 [env]
-# Put local binaries on PATH so tasks call `eslint`, not `npx eslint`.
-_.path = ["./node_modules/.bin"]
+# habit-hooks (structural-smell detector) is a pinned, mise-managed dependency, so the
+# SAME version runs in-loop, pre-push (`gate`) and in CI. setup:habit-hooks (postinstall)
+# provisions it into a per-plugin venv whose bin goes on PATH below. Keep it == the
+# reusable bootstrap workflow's habit_hooks_version default (1.5.0).
+HABIT_HOOKS_VERSION = "1.5.0"
+HABIT_HOOKS_PLUGIN = "habit-hooks-typescript"
+
+# Put local binaries on PATH so tasks call `eslint`, not `npx eslint`; and the habit-hooks
+# venv bin (Linux `bin/`, Windows `Scripts/`; a missing one on PATH is harmless).
+_.path = [
+    "./node_modules/.bin",
+    "{{env.HOME}}/.local/opt/{{env.HABIT_HOOKS_PLUGIN}}-{{env.HABIT_HOOKS_VERSION}}/bin",
+    "{{env.HOME}}/.local/opt/{{env.HABIT_HOOKS_PLUGIN}}-{{env.HABIT_HOOKS_VERSION}}/Scripts",
+]
+
+[hooks]
+# Provision the pinned habit-hooks on `mise install` (local and CI alike), like setup:pmd.
+postinstall = "mise run setup:habit-hooks"
 
 # ── FOUNDRY_SINCE — changed-scope for the fast placements ────────────────────
 # A git ref (empty ⇒ origin/main). When SET, the file-local verbs (`lint`, `test`)
@@ -28,6 +44,49 @@ run = [
     "eslint . --prune-suppressions",
 ]
 
+# Provision the pinned habit-hooks (core + language plugin, same version) into a per-plugin
+# venv. Auxiliary, like setup:pmd - not a contract verb; runs via postinstall on `mise install`.
+[tasks."setup:habit-hooks"]
+description = "Install the pinned habit-hooks + language plugin into a venv (smell detector)"
+run = '''
+set -eu
+dst="$HOME/.local/opt/$HABIT_HOOKS_PLUGIN-$HABIT_HOOKS_VERSION"
+py=""
+for c in python3 python; do
+  if command -v "$c" >/dev/null 2>&1 && "$c" --version >/dev/null 2>&1; then py="$c"; break; fi
+done
+if [ -z "$py" ]; then echo "setup:habit-hooks: no working python3/python on PATH; skipping (install Python to run smells)"; exit 0; fi
+bin="$dst/bin"; [ -d "$bin" ] || bin="$dst/Scripts"
+if "$bin/habit-hooks" --version >/dev/null 2>&1; then exit 0; fi
+echo "Installing $HABIT_HOOKS_PLUGIN + habit-hooks $HABIT_HOOKS_VERSION -> $dst"
+rm -rf "$dst"
+"$py" -m venv "$dst"
+bin="$dst/bin"; [ -d "$bin" ] || bin="$dst/Scripts"
+"$bin/pip" install --disable-pip-version-check "habit-hooks==$HABIT_HOOKS_VERSION" "$HABIT_HOOKS_PLUGIN==$HABIT_HOOKS_VERSION"
+'''
+
+# Structural smells, folded into `lint` below. Same check CI's habits job runs, so `gate`
+# is the same oracle locally as in CI. Calls the pinned venv binary by full path (mise only
+# APPENDS _.path, so an unpinned global install must not shadow the pin). --branch scopes to
+# files changed vs the base; unchanged files are already covered by the snooze baseline.
+# Degrades gracefully: skips with no config / no baseline / unresolvable base; FAILS HARD
+# only when a config + baseline exist but the pinned habit-hooks is missing (run `mise install`).
+[tasks.smells]
+description = "Structural smells on changed files (habit-hooks --branch); folded into lint"
+depends = ["setup:habit-hooks"]
+run = '''
+set -eu
+dst="$HOME/.local/opt/$HABIT_HOOKS_PLUGIN-$HABIT_HOOKS_VERSION"
+hh="$dst/bin/habit-hooks"; [ -x "$hh" ] || hh="$dst/Scripts/habit-hooks.exe"
+if [ ! -f .habit-hooks/config.toml ]; then echo "smells: no .habit-hooks/config.toml; skipping"; exit 0; fi
+if [ ! -f .habit-hooks/snooze.json ]; then m="smells: no snooze baseline yet (run bootstrap); structural smells are NOT being checked"; echo "$m"; if [ -n "${GITHUB_ACTIONS:-}" ]; then echo "::warning::$m"; fi; exit 0; fi
+mb=$(git merge-base "${FOUNDRY_BASE_REF:-origin/main}" HEAD 2>/dev/null || true)
+if [ -z "$mb" ]; then echo "smells: cannot resolve base '${FOUNDRY_BASE_REF:-origin/main}'; skipping"; exit 0; fi
+[ -x "$hh" ] || { echo "smells: pinned habit-hooks not found at $dst (run 'mise install')" >&2; exit 1; }
+echo "smells: $("$hh" --version) --branch base=$mb"
+"$hh" --branch "$mb"
+'''
+
 [tasks.lint]
 description = "Style and smells; non-mutating"
 # Fails on new violations AND on stale suppressions, so the baseline cannot rot.
@@ -36,7 +95,10 @@ description = "Style and smells; non-mutating"
 # Honours FOUNDRY_SINCE (see [env]): scoped to changed files at the fast placements,
 # whole-tree in CI. eslint findings are file-local, so scoping is safe; the
 # whole-tree CI run still catches stale suppressions repo-wide.
-run = '''
+# Array form: the eslint block + the structural-smell check (`mise run smells`), each run in
+# order. `exec eslint` inside the first element only replaces that element's subshell, so the
+# second element still runs.
+run = ['''
 set -eu
 if [ -z "${FOUNDRY_SINCE+x}" ]; then exec eslint .; fi
 base="${FOUNDRY_SINCE:-origin/main}"
@@ -47,7 +109,7 @@ untracked=$(git ls-files --others --exclude-standard -- '*.ts' '*.tsx' '*.js' '*
 files=$(printf '%s\n%s\n' "$changed" "$untracked" | sort -u | sed '/^$/d')
 if [ -z "$files" ]; then echo "changed-scope lint: no changed JS/TS since $mb"; exit 0; fi
 printf '%s\n' "$files" | xargs -d '\n' eslint
-'''
+''', "mise run smells"]
 
 [tasks.typecheck]
 description = "Static types"
