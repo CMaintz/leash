@@ -4,6 +4,17 @@ All notable changes to this project are documented here. Format: [Keep a Changel
 
 ## [Unreleased]
 
+## [0.10.0] - 2026-10-09
+
+### Added
+
+- **`leash login`**: stores your API key in `~/.leash/.env`, owner-only. Prompts with hidden input on a terminal, or reads a piped key.
+- **Key files.** Settings now resolve from the process env, then the repo's `.env.local`, then `.env`, then `~/.leash/.env`. Only Leash's own keys (`JEV_*`, `TYPESAFE_AI_*`, `LEASH_*`) are read from those files. New exports: `resolveEnv`, `envFiles`, `parseEnvFile`, `saveApiKey`, `userEnvPath`.
+
+### Changed
+
+- The no-key skip message now points at `leash login`.
+
 ## [0.9.1] - 2026-10-04
 
 ### Fixed

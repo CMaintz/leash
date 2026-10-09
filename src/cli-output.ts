@@ -3,12 +3,13 @@ import { RUBRIC_PATH } from './cli-store.js';
 import { type Finding, type Rubric } from './schema.js';
 
 export function skipReason(rubric: Rubric | null): string {
-  return rubric ? 'no JEV_API_KEY set' : `no rubric at ${RUBRIC_PATH}`;
+  return rubric ? 'no JEV_API_KEY (run `leash login`)' : `no rubric at ${RUBRIC_PATH}`;
 }
 
 export function skip(rubric: Rubric | null, provider: unknown): void {
   if (!rubric) console.log(`leash: no rubric at ${RUBRIC_PATH} - nothing to check.`);
-  if (!provider) console.log('leash: no JEV_API_KEY set - skipping (fail open).');
+  if (!provider)
+    console.log('leash: no JEV_API_KEY - run `leash login`, or set it in the env or .env. Skipping (fail open).');
 }
 
 export function printFindings(findings: Finding[]): void {

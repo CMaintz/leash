@@ -1,5 +1,7 @@
 import { execSync } from 'node:child_process';
 import { existsSync, mkdirSync, readFileSync, writeFileSync } from 'node:fs';
+import { envFiles, resolveEnv } from './env.js';
+import { providerFromEnv, type JevProvider } from './provider.js';
 import { parseRubric, type Rubric } from './schema.js';
 
 export const RUBRIC_PATH = '.leash/rubric.json';
@@ -36,4 +38,18 @@ export function loadBaseline(): string[] {
 export function writeJson(path: string, value: unknown): void {
   mkdirSync('.leash', { recursive: true });
   writeFileSync(path, `${JSON.stringify(value, null, 2)}\n`);
+}
+
+/** The repo root, or the cwd outside a git repo. */
+export function projectRoot(): string {
+  try {
+    return execSync('git rev-parse --show-toplevel', { encoding: 'utf8', stdio: ['pipe', 'pipe', 'ignore'] }).trim();
+  } catch {
+    return process.cwd();
+  }
+}
+
+/** The provider from the process env plus Leash's env files (see env.ts); null = fail open. */
+export function cliProvider(): JevProvider | null {
+  return providerFromEnv(resolveEnv(process.env, envFiles(projectRoot())));
 }

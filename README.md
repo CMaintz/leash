@@ -25,7 +25,7 @@ Leash only ever flags what a turn **newly** introduces. The baseline is one-way,
 only shrink. That is what makes it adoptable on an existing codebase from day one.
 
 Turn-check is the default (once per turn, on the whole diff, where the un-lintable
-questions actually have an answer). A per-edit mode is planned but off by default: at
+questions actually have an answer). A per-edit mode exists but is off by default: at
 Jev's edit-level precision, per-edit auto-repair risks the agent chasing phantoms.
 
 ## Install
@@ -34,8 +34,19 @@ Jev's edit-level precision, per-edit auto-repair risks the agent chasing phantom
 npm install -g @cmaintz/leash   # or: npx @cmaintz/leash <command>
 ```
 
-Set a key: `export JEV_API_KEY=...` (or `TYPESAFE_AI_BASE_URL` for a self-host / proxy /
-mock). No key means Leash no-ops and lets the edit through, always.
+Set a key once:
+
+```
+leash login               # prompts (input hidden); or pipe it: Get-Clipboard | leash login
+```
+
+That stores `JEV_API_KEY` in `~/.leash/.env`, readable only by you (mode 0600 on
+macOS/Linux; on Windows the file sits in your user profile and inherits its ACL). Leash
+looks for its settings in this order: the process env, then the repo's `.env.local`,
+then its `.env`, then `~/.leash/.env`. From those files it reads only its own keys
+(`JEV_*`, `TYPESAFE_AI_*`, `LEASH_*`), never your app's other secrets.
+`TYPESAFE_AI_BASE_URL` points it at a self-host, proxy or mock. No key means Leash
+no-ops and lets the edit through, always.
 
 ## Use
 

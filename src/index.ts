@@ -29,6 +29,7 @@ export { addLeashHooks, hostConfigPath, removeLeashHooks } from './install.js';
 export { OPENCODE_PLUGIN, opencodePluginPath, removeOpenCodePlugin, writeOpenCodePlugin } from './opencode.js';
 export type { ClaudeSettings, Host, InstallOptions } from './install.js';
 export { chunkPatch, isBinaryPatch, isLeashPath, MAX_PATCH_CHARS, mergeAnswers } from './patch.js';
+export { envFiles, parseEnvFile, resolveEnv, saveApiKey, userEnvPath } from './env.js';
 export { parseRubric } from './schema.js';
 export type { Baseline, Band, Finding, Phase, Rubric, Rule } from './schema.js';
 export { DEFAULT_TIMEOUT_MS, postJson, providerFromEnv, TypeSafeProvider } from './provider.js';
