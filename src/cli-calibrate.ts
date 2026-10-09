@@ -14,7 +14,7 @@ export async function calibrate(): Promise<void> {
   printCalibration(report, commits.length);
 }
 
-function commitDiffs(sample: number): FileDiff[][] {
+export function commitDiffs(sample: number): FileDiff[][] {
   const log = execSync(`git log -n ${sample} --format=%H`, { encoding: 'utf8' });
   const shas = log.trim().split('\n').filter(Boolean);
   return shas.map((sha) =>

@@ -4,6 +4,12 @@ All notable changes to this project are documented here. Format: [Keep a Changel
 
 ## [Unreleased]
 
+## [0.13.0] - 2026-10-09
+
+### Added
+
+- **`leash bench [--sample N]`**: replays the last N commits as turns through the Stop hook's check. Reports request and turn latency (p50/p95/max), characters sent, and the token usage the API reports. It shows no price; multiply the tokens by your own rate. New exports: `timedProvider`, `benchReport`, `percentiles`.
+
 ## [0.12.0] - 2026-10-09
 
 ### Added

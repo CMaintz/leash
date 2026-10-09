@@ -5,6 +5,7 @@
 
 import { existsSync, readFileSync } from 'node:fs';
 import { createRequire } from 'node:module';
+import { bench } from './cli-bench.js';
 import { calibrate } from './cli-calibrate.js';
 import { hasFlag, positional, targetFlag, type Target } from './cli-args.js';
 import { logMisses, printFindings, printMisses, printSkipped, skip, skipReason } from './cli-output.js';
@@ -57,6 +58,7 @@ async function main(): Promise<void> {
     compile: () => compile(),
     guard: () => guard(arg),
     calibrate: () => calibrate(),
+    bench: () => bench(),
     'edit-check': () => editCheck(arg),
     snapshot: () => snapshot(),
     hook: () => hook(),

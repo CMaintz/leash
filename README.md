@@ -58,8 +58,16 @@ leash check [baseRef]     # print what this turn newly broke (default base: HEAD
                           #   --turn: since the turn snapshot; --json: machine-readable
 leash guard [baseRef]     # fail if the rubric was loosened vs baseRef (for CI)
 leash calibrate [N]       # score rules against the last N commits (default 20); flag dead ones
+leash bench [N]           # latency, size and tokens of replaying the last N commits as turns
 leash edit-check <file>   # opt-in per-edit check of one file (see below)
+leash login               # store your API key in ~/.leash/.env
 ```
+
+`leash bench` replays your last N commits (default 20) as turns through the same check
+the Stop hook runs. It reports p50/p95/max latency per request and per turn, characters
+sent, and the tokens the API reports. It has no price table, so multiply the tokens by
+your plan's rate. Run it once before you install the hooks, to see the cost on your own
+repo and machine.
 
 `leash calibrate` runs each active turn-phase rule over the diffs of the last N commits
 (`--sample N` or a bare `N`, default 20) and reports how often each actually fires. A rule
