@@ -7,7 +7,8 @@ import { existsSync, readFileSync } from 'node:fs';
 import { createRequire } from 'node:module';
 import { calibrate } from './cli-calibrate.js';
 import { hasFlag, positional, targetFlag, type Target } from './cli-args.js';
-import { printFindings, printSkipped, skip, skipReason } from './cli-output.js';
+import { logMisses, printFindings, printMisses, printSkipped, skip, skipReason } from './cli-output.js';
+import { logMiss } from './misses.js';
 import {
   BASELINE_PATH,
   cliProvider,
@@ -17,6 +18,7 @@ import {
   projectRoot,
   RUBRIC_PATH,
   tryLoadRubric,
+  turnSignal,
   writeJson,
 } from './cli-store.js';
 import { checkTurn, type CheckResult } from './check.js';
@@ -33,6 +35,7 @@ import { saveApiKey } from './env.js';
 import { readSecret } from './secret.js';
 import { diffToWorktree, readBlocked, readTurnBase, recordBlocked, writeTurnBase } from './snapshot.js';
 import { parseRubric, type Finding, type Rubric } from './schema.js';
+import type { JevProvider } from './provider.js';
 
 async function main(): Promise<void> {
   const command = process.argv[2] ?? 'help';
@@ -62,18 +65,25 @@ async function main(): Promise<void> {
   await (commands[command] ?? commands.help)!();
 }
 
-// `--turn` diffs since the turn snapshot (what the hooks judge); `--json` prints a stable
-// machine-readable result (the OpenCode plugin and CI consume it).
+// `--turn` diffs since the turn snapshot (what the hooks judge, so its misses are logged);
+// `--json` prints a stable machine-readable result (the OpenCode plugin and CI consume it).
 async function check(baseRef?: string): Promise<void> {
-  const base = hasFlag('--turn') ? readTurnBase() : (baseRef ?? 'HEAD');
+  const turn = hasFlag('--turn');
+  const base = turn ? readTurnBase() : (baseRef ?? 'HEAD');
   const json = hasFlag('--json');
   const rubric = loadRubric();
   const provider = cliProvider();
-  if (!rubric || !provider) return json ? printCheckJson(base, null, skipReason(rubric)) : skip(rubric, provider);
-  const result = await checkTurn(provider, rubric, parseDiff(diffToWorktree(base)), loadBaseline());
-  if (json) return printCheckJson(base, result);
+  const result = rubric && provider ? await checkDiff(provider, rubric, base) : null;
+  if (turn) logMisses('check --turn', rubric, result?.skipped ?? null);
+  if (json) return printCheckJson(base, result, result ? undefined : skipReason(rubric));
+  if (!result) return skip(rubric, provider);
   printFindings(result.actionable);
   printSkipped(result.skipped);
+}
+
+function checkDiff(provider: JevProvider, rubric: Rubric, base: string): Promise<CheckResult> {
+  const diffs = parseDiff(diffToWorktree(base));
+  return checkTurn(provider, rubric, diffs, loadBaseline(), { signal: turnSignal() });
 }
 
 function printCheckJson(base: string, result: CheckResult | null, reason?: string): void {
@@ -105,9 +115,10 @@ async function hook(): Promise<void> {
   await readHookInput(); // drain the payload; the turn state lives in the git dir
   const rubric = loadRubric();
   const provider = cliProvider();
-  if (!rubric || !provider) return; // fail open, silent: allow the stop
+  if (!rubric || !provider) return logMisses('hook', rubric, null); // fail open: allow the stop
   const base = readTurnBase();
-  const { actionable } = await checkTurn(provider, rubric, parseDiff(diffToWorktree(base)), loadBaseline());
+  const { actionable, skipped } = await checkDiff(provider, rubric, base);
+  logMisses('hook', rubric, skipped);
   const { decision, blocked } = stopDecisionOnce(actionable, readBlocked(base));
   if (!decision.decision) return;
   recordBlocked(base, blocked);
@@ -154,6 +165,7 @@ function report(): void {
     const scope = rule.scope.length ? rule.scope.join(',') : '*';
     console.log(`- ${rule.id} [${rule.phase}] scope=${scope} repair>=${rule.repairAt} note>=${rule.noteAt}`);
   }
+  printMisses(5);
 }
 
 // Validate .leash/rubric.json and report the deterministic-first split. Exit 1 only
@@ -216,11 +228,14 @@ async function editFindings(file: string): Promise<Finding[] | null> {
   if (!rubric || !provider) return null;
   const questions = questionsForFile(rubric, file, 'edit');
   if (isLeashPath(file) || isIgnored(file) || Object.keys(questions).length === 0) return [];
-  const { answers } = await provider.evaluate({ state: { file, diff: diffToWorktree('HEAD', file) }, questions });
+  const state = { file, diff: diffToWorktree('HEAD', file) };
+  const { answers } = await provider.evaluate({ state, questions, signal: turnSignal() });
   return newFindings(findingsForFile(rubric, file, answers, 'edit'), loadBaseline());
 }
 
 main().catch((err: unknown) => {
-  console.error(`leash: ${err instanceof Error ? err.message : String(err)}`);
+  const message = err instanceof Error ? err.message : String(err);
+  logMiss(process.argv[2] ?? 'help', message);
+  console.error(`leash: ${message}`);
   process.exit(0); // advisory: never break the session
 });

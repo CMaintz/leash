@@ -96,6 +96,18 @@ optional `scope`, `source` (the instruction-file line it came from), and `handle
 }
 ```
 
+## Time budget and the miss log
+
+A hook must never stall the agent. Each Jev request times out after 20s
+(`LEASH_TIMEOUT_MS`), and a whole turn's check gets 60s (`LEASH_DEADLINE_MS`). When
+the time is up, unjudged files are skipped, any request still waiting is cancelled,
+and the turn goes through. `leash init` also gives each hook a host timeout (90s for
+the Stop and per-edit hooks, 30s for the snapshot) as a backstop.
+
+Failing open is never silent. Each time a hook lets work through unchecked, it adds a
+line to `leash-misses.log` in the git dir, never in your working tree. That covers no
+key, a failed call, and the deadline. `leash report` shows the last few entries.
+
 ## Claude Code (turn hook)
 
 Leash runs as two Claude Code hooks: a `UserPromptSubmit` hook snapshots the working

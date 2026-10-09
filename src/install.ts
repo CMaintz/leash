@@ -20,21 +20,31 @@ const HOST_CONFIG: Record<Host, { dir: string; file: string }> = {
 interface HookSpec {
   event: string;
   command: string;
+  /** Seconds before the host kills the hook (same key and unit in Claude Code and Codex). */
+  timeout: number;
   matcher?: string;
 }
 
+// Host timeouts sit above Leash's own turn deadline (LEASH_DEADLINE_MS, default 60s), so
+// Leash normally finishes and logs its misses; the host kill is only the backstop.
 /** The turn hooks Leash always installs: snapshot at turn start, check at turn end. */
 const TURN_HOOKS: readonly HookSpec[] = [
-  { event: 'UserPromptSubmit', command: 'leash snapshot' },
-  { event: 'Stop', command: 'leash hook' },
+  { event: 'UserPromptSubmit', command: 'leash snapshot', timeout: 30 },
+  { event: 'Stop', command: 'leash hook', timeout: 90 },
 ];
 
 /** The opt-in per-edit hook (`init --edit-phase`). */
-const EDIT_HOOK: HookSpec = { event: 'PostToolUse', command: 'leash edit-hook', matcher: 'Edit|Write|MultiEdit' };
+const EDIT_HOOK: HookSpec = {
+  event: 'PostToolUse',
+  command: 'leash edit-hook',
+  timeout: 90,
+  matcher: 'Edit|Write|MultiEdit',
+};
 
 interface HookEntry {
   type: 'command';
   command: string;
+  timeout?: number;
 }
 
 interface HookGroup {
@@ -52,21 +62,21 @@ export interface InstallOptions {
   editPhase?: boolean;
 }
 
-/** Add Leash's hook groups, skipping any already present (idempotent). */
+/** Add Leash's hook groups, replacing an older install of the same command (idempotent). */
 export function addLeashHooks(settings: ClaudeSettings, options: InstallOptions = {}): ClaudeSettings {
   const specs = options.editPhase ? [...TURN_HOOKS, EDIT_HOOK] : TURN_HOOKS;
   return specs.reduce(addHook, settings);
 }
 
 function addHook(settings: ClaudeSettings, spec: HookSpec): ClaudeSettings {
-  const groups = [...(settings.hooks?.[spec.event] ?? [])];
-  if (!groups.some((group) => group.hooks?.some((hook) => hook.command === spec.command))) {
-    groups.push({
-      ...(spec.matcher ? { matcher: spec.matcher } : {}),
-      hooks: [{ type: 'command', command: spec.command }],
-    });
-  }
-  return { ...settings, hooks: { ...(settings.hooks ?? {}), [spec.event]: groups } };
+  const others = (settings.hooks?.[spec.event] ?? []).filter(
+    (group) => !group.hooks?.some((hook) => hook.command === spec.command),
+  );
+  const group: HookGroup = {
+    ...(spec.matcher ? { matcher: spec.matcher } : {}),
+    hooks: [{ type: 'command', command: spec.command, timeout: spec.timeout }],
+  };
+  return { ...settings, hooks: { ...(settings.hooks ?? {}), [spec.event]: [...others, group] } };
 }
 
 /** Remove every hook group that runs a `leash` command. */

@@ -1,7 +1,8 @@
 import { execSync } from 'node:child_process';
 import { existsSync, mkdirSync, readFileSync, writeFileSync } from 'node:fs';
 import { envFiles, resolveEnv } from './env.js';
-import { providerFromEnv, type JevProvider } from './provider.js';
+import { DEFAULT_DEADLINE_MS } from './check.js';
+import { positiveMs, providerFromEnv, type JevProvider } from './provider.js';
 import { parseRubric, type Rubric } from './schema.js';
 
 export const RUBRIC_PATH = '.leash/rubric.json';
@@ -49,7 +50,17 @@ export function projectRoot(): string {
   }
 }
 
-/** The provider from the process env plus Leash's env files (see env.ts); null = fail open. */
+/** The process env plus Leash's env files (see env.ts). */
+function leashEnv(): NodeJS.ProcessEnv {
+  return resolveEnv(process.env, envFiles(projectRoot()));
+}
+
+/** The provider from leashEnv(); null = no key, fail open. */
 export function cliProvider(): JevProvider | null {
-  return providerFromEnv(resolveEnv(process.env, envFiles(projectRoot())));
+  return providerFromEnv(leashEnv());
+}
+
+/** Aborts once the turn budget (LEASH_DEADLINE_MS, default 60s) is spent. */
+export function turnSignal(): AbortSignal {
+  return AbortSignal.timeout(positiveMs(leashEnv().LEASH_DEADLINE_MS, DEFAULT_DEADLINE_MS));
 }

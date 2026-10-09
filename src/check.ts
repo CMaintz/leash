@@ -29,7 +29,13 @@ export interface CheckOptions {
   concurrency?: number;
   /** Per-call patch budget in characters before chunking (default MAX_PATCH_CHARS). */
   maxPatchChars?: number;
+  /** The turn deadline: once aborted, unjudged files are skipped and in-flight calls end. */
+  signal?: AbortSignal;
 }
+
+/** Whole-turn budget default (LEASH_DEADLINE_MS): the Stop hook must answer promptly. */
+export const DEFAULT_DEADLINE_MS = 60_000;
+export const DEADLINE_REASON = 'turn deadline reached';
 
 interface FileResult {
   findings: Finding[];
@@ -43,25 +49,30 @@ export async function checkTurn(
   baseline: readonly string[] = [],
   options: CheckOptions = {},
 ): Promise<CheckResult> {
-  const maxChars = options.maxPatchChars ?? MAX_PATCH_CHARS;
-  const results = await mapLimit(diffs, options.concurrency ?? 4, (diff) =>
-    checkFile(provider, rubric, diff, maxChars),
-  );
+  const results = await mapLimit(diffs, options.concurrency ?? 4, (diff) => checkFile(provider, rubric, diff, options));
   const findings = results.flatMap((r) => r.findings);
   const skipped = results.flatMap((r) => (r.skipped ? [r.skipped] : []));
   return { findings, actionable: newFindings(findings, baseline), skipped };
 }
 
-async function checkFile(provider: JevProvider, rubric: Rubric, diff: FileDiff, maxChars: number): Promise<FileResult> {
+async function checkFile(
+  provider: JevProvider,
+  rubric: Rubric,
+  diff: FileDiff,
+  options: CheckOptions,
+): Promise<FileResult> {
   const { file, patch } = diff;
   if (isLeashPath(file) || isIgnored(file) || isBinaryPatch(patch)) return { findings: [] };
   const questions = questionsForFile(rubric, file);
   if (Object.keys(questions).length === 0) return { findings: [] };
+  const { signal } = options;
   try {
-    const answers = await judgeChunks(provider, file, chunkPatch(patch, maxChars), questions);
-    return { findings: findingsForFile(rubric, file, answers) };
+    signal?.throwIfAborted();
+    const chunks = chunkPatch(patch, options.maxPatchChars ?? MAX_PATCH_CHARS);
+    return { findings: findingsForFile(rubric, file, await judgeChunks(provider, file, chunks, questions, signal)) };
   } catch (err) {
-    return { findings: [], skipped: { file, reason: err instanceof Error ? err.message : String(err) } };
+    const reason = signal?.aborted ? DEADLINE_REASON : err instanceof Error ? err.message : String(err);
+    return { findings: [], skipped: { file, reason } };
   }
 }
 
@@ -71,11 +82,12 @@ async function judgeChunks(
   file: string,
   chunks: string[],
   questions: Record<string, Question>,
+  signal?: AbortSignal,
 ): Promise<Record<string, Answer>> {
   const all: Record<string, Answer>[] = [];
   for (const [i, diff] of chunks.entries()) {
     const state = chunks.length > 1 ? { file, diff, part: `${i + 1}/${chunks.length}` } : { file, diff };
-    all.push((await provider.evaluate({ state, questions })).answers);
+    all.push((await provider.evaluate({ state, questions, ...(signal ? { signal } : {}) })).answers);
   }
   return mergeAnswers(all);
 }

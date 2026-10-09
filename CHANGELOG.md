@@ -4,6 +4,14 @@ All notable changes to this project are documented here. Format: [Keep a Changel
 
 ## [Unreleased]
 
+## [0.11.0] - 2026-10-09
+
+### Added
+
+- **Turn deadline.** A turn's check now has a 60s budget (`LEASH_DEADLINE_MS`). Past it, files not yet judged are skipped as `turn deadline reached` and calls still in flight are cancelled, so the hook returns on time. `JevRequest` takes an optional `signal` (never sent on the wire); `checkTurn` takes `options.signal`.
+- **Host timeouts.** `leash init` sets `timeout` on every hook: Stop and per-edit 90s, snapshot 30s. It is the same key, in seconds, for Claude Code and Codex. Re-running `init` now upgrades an older install in place instead of skipping it.
+- **Miss log.** Each run where a hook let work through unchecked (no key, a failed call, the deadline, a crash) appends a JSON line to `leash-misses.log` in the git dir. The log is capped at 200 lines. `leash report` prints the last five.
+
 ## [0.10.0] - 2026-10-09
 
 ### Added

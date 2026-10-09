@@ -24,6 +24,22 @@ describe('addLeashHooks', () => {
   });
 });
 
+describe('hook timeouts', () => {
+  it('sets a host timeout on every Leash hook', () => {
+    const out = addLeashHooks({}, { editPhase: true });
+    expect(out.hooks?.Stop?.[0]?.hooks?.[0]?.timeout).toBe(90);
+    expect(out.hooks?.UserPromptSubmit?.[0]?.hooks?.[0]?.timeout).toBe(30);
+    expect(out.hooks?.PostToolUse?.[0]?.hooks?.[0]?.timeout).toBe(90);
+  });
+
+  it('re-running init upgrades an older install in place', () => {
+    const old: ClaudeSettings = { hooks: { Stop: [{ hooks: [{ type: 'command', command: 'leash hook' }] }] } };
+    const stop = addLeashHooks(old).hooks?.Stop;
+    expect(stop).toHaveLength(1);
+    expect(stop?.[0]?.hooks?.[0]?.timeout).toBe(90);
+  });
+});
+
 describe('edit phase (opt-in)', () => {
   it('is not wired by default', () => {
     expect(addLeashHooks({}).hooks?.PostToolUse).toBeUndefined();
