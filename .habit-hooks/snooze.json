@@ -1,1 +1,15 @@
-["src/calibrate.ts", "src/check.ts", "src/cli.ts", "src/compile.ts", "src/diff.ts", "src/engine.ts", "src/guard.ts", "src/hook.ts", "src/index.ts", "src/install.ts", "src/provider.ts", "src/schema.ts", "vitest.config.ts"]
+[
+  "src/calibrate.ts",
+  "src/check.ts",
+  "src/cli.ts",
+  "src/compile.ts",
+  "src/diff.ts",
+  "src/engine.ts",
+  "src/guard.ts",
+  "src/hook.ts",
+  "src/index.ts",
+  "src/install.ts",
+  "src/provider.ts",
+  "src/schema.ts",
+  "vitest.config.ts"
+]
