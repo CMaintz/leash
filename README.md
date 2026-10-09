@@ -350,12 +350,14 @@ Versioned per [Semantic Versioning](https://semver.org/) with a [CHANGELOG](CHAN
 Bump `package.json` and add the CHANGELOG section in a PR; after it merges, push the tag:
 
 ```
-git tag v0.8.0 && git push origin v0.8.0
+git tag v0.13.0 && git push origin v0.13.0
 ```
 
-The `release` workflow then checks the tag matches `package.json`, re-runs the gate,
-publishes `@cmaintz/leash` to npm with provenance, and cuts the GitHub release from that
-version's CHANGELOG section. It needs an `NPM_TOKEN` repository secret.
+The `release` workflow then checks that the tag matches `package.json` and re-runs the
+gate. Next it publishes `@cmaintz/leash` to npm through trusted publishing (OIDC, so no
+token secret), with provenance. Last, it creates the GitHub release from that version's
+CHANGELOG section. A version that is already on npm is skipped and only gets its
+GitHub release.
 
 ## License
 
