@@ -20,6 +20,8 @@ export type Answer =
 export interface JevRequest {
   state: unknown;
   questions: Record<string, Question>;
+  /** Aborts the call (the turn deadline); never sent on the wire. */
+  signal?: AbortSignal;
 }
 
 export interface JevResponse {
@@ -38,20 +40,23 @@ const sleep = (ms: number): Promise<void> => new Promise((resolve) => setTimeout
 /** Per-request timeout default: a hung connection must never stall an agent's turn. */
 export const DEFAULT_TIMEOUT_MS = 20_000;
 
-/** POST JSON with the docs' recommended exponential backoff on 429/529, and a timeout. */
+/** POST JSON with the docs' recommended exponential backoff on 429/529, a per-request
+ * timeout, and an optional outer `signal` (the turn deadline) that also ends the retries. */
 export async function postJson(
   url: string,
   headers: Record<string, string>,
   body: unknown,
   maxAttempts = 4,
   timeoutMs = DEFAULT_TIMEOUT_MS,
+  signal?: AbortSignal,
 ): Promise<unknown> {
   for (let attempt = 1; ; attempt++) {
+    signal?.throwIfAborted();
     const res = await fetch(url, {
       method: 'POST',
       headers: { 'Content-Type': 'application/json', ...headers },
       body: JSON.stringify(body),
-      signal: AbortSignal.timeout(timeoutMs),
+      signal: requestSignal(timeoutMs, signal),
     });
     if (res.ok) return res.json();
     if (RETRYABLE.has(res.status) && attempt < maxAttempts) {
@@ -60,6 +65,11 @@ export async function postJson(
     }
     throw new Error(`Jev request failed: ${res.status} ${await res.text()}`);
   }
+}
+
+function requestSignal(timeoutMs: number, outer?: AbortSignal): AbortSignal {
+  const timeout = AbortSignal.timeout(timeoutMs);
+  return outer ? AbortSignal.any([timeout, outer]) : timeout;
 }
 
 /** TypeSafe first-party adapter. */
@@ -78,6 +88,7 @@ export class TypeSafeProvider implements JevProvider {
       { model: this.model, state: req.state, questions: req.questions },
       4,
       this.timeoutMs,
+      req.signal,
     );
     return json as JevResponse;
   }
@@ -92,6 +103,11 @@ export function providerFromEnv(env: NodeJS.ProcessEnv = process.env): JevProvid
 }
 
 function timeoutFrom(env: NodeJS.ProcessEnv): number {
-  const ms = Number(env.LEASH_TIMEOUT_MS);
-  return Number.isFinite(ms) && ms > 0 ? ms : DEFAULT_TIMEOUT_MS;
+  return positiveMs(env.LEASH_TIMEOUT_MS, DEFAULT_TIMEOUT_MS);
+}
+
+/** A positive millisecond setting, or `fallback` when unset or malformed. */
+export function positiveMs(raw: string | undefined, fallback: number): number {
+  const ms = Number(raw);
+  return Number.isFinite(ms) && ms > 0 ? ms : fallback;
 }

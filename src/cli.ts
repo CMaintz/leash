@@ -3,19 +3,24 @@
 // the current diff and prints what a turn newly broke; `audit` accepts current debt
 // into the baseline; `report` lists the rubric. Always exits 0: Leash is advisory.
 
-import { execSync } from 'node:child_process';
 import { existsSync, readFileSync } from 'node:fs';
 import { createRequire } from 'node:module';
+import { bench } from './cli-bench.js';
 import { calibrate } from './cli-calibrate.js';
 import { hasFlag, positional, targetFlag, type Target } from './cli-args.js';
-import { printFindings, printSkipped, skip, skipReason } from './cli-output.js';
+import { logMisses, printFindings, printMisses, printSkipped, skip, skipReason } from './cli-output.js';
+import { logMiss } from './misses.js';
 import {
   BASELINE_PATH,
+  cliProvider,
   loadBaseline,
   loadRubric,
   loadRubricAt,
+  loadSources,
+  projectRoot,
   RUBRIC_PATH,
   tryLoadRubric,
+  turnSignal,
   writeJson,
 } from './cli-store.js';
 import { checkTurn, type CheckResult } from './check.js';
@@ -28,9 +33,20 @@ import { writeRubricCommand, removeRubricCommand } from './commands.js';
 import { addLeashHooks, hostConfigPath, loadSettings, removeLeashHooks, saveSettings } from './install.js';
 import { removeOpenCodePlugin, writeOpenCodePlugin } from './opencode.js';
 import { isLeashPath } from './patch.js';
-import { providerFromEnv } from './provider.js';
+import { saveApiKey } from './env.js';
+import {
+  instructionFiles,
+  NO_STAMP_NUDGE,
+  sessionStartOutput,
+  SOURCES_PATH,
+  stampSources,
+  staleNudge,
+  staleSources,
+} from './sources.js';
+import { readSecret } from './secret.js';
 import { diffToWorktree, readBlocked, readTurnBase, recordBlocked, writeTurnBase } from './snapshot.js';
 import { parseRubric, type Finding, type Rubric } from './schema.js';
+import type { JevProvider } from './provider.js';
 
 async function main(): Promise<void> {
   const command = process.argv[2] ?? 'help';
@@ -42,10 +58,13 @@ async function main(): Promise<void> {
     compile: () => compile(),
     guard: () => guard(arg),
     calibrate: () => calibrate(),
+    bench: () => bench(),
     'edit-check': () => editCheck(arg),
     snapshot: () => snapshot(),
     hook: () => hook(),
+    session: () => session(),
     'edit-hook': () => editHook(),
+    login: () => login(),
     init: () => install(hasFlag('--project'), targetFlag()),
     uninstall: () => uninstallHooks(hasFlag('--project'), targetFlag()),
     version: () => console.log(`leash ${packageVersion()}`),
@@ -59,18 +78,25 @@ async function main(): Promise<void> {
   await (commands[command] ?? commands.help)!();
 }
 
-// `--turn` diffs since the turn snapshot (what the hooks judge); `--json` prints a stable
-// machine-readable result (the OpenCode plugin and CI consume it).
+// `--turn` diffs since the turn snapshot (what the hooks judge, so its misses are logged);
+// `--json` prints a stable machine-readable result (the OpenCode plugin and CI consume it).
 async function check(baseRef?: string): Promise<void> {
-  const base = hasFlag('--turn') ? readTurnBase() : (baseRef ?? 'HEAD');
+  const turn = hasFlag('--turn');
+  const base = turn ? readTurnBase() : (baseRef ?? 'HEAD');
   const json = hasFlag('--json');
   const rubric = loadRubric();
-  const provider = providerFromEnv();
-  if (!rubric || !provider) return json ? printCheckJson(base, null, skipReason(rubric)) : skip(rubric, provider);
-  const result = await checkTurn(provider, rubric, parseDiff(diffToWorktree(base)), loadBaseline());
-  if (json) return printCheckJson(base, result);
+  const provider = cliProvider();
+  const result = rubric && provider ? await checkDiff(provider, rubric, base) : null;
+  if (turn) logMisses('check --turn', rubric, result?.skipped ?? null);
+  if (json) return printCheckJson(base, result, result ? undefined : skipReason(rubric));
+  if (!result) return skip(rubric, provider);
   printFindings(result.actionable);
   printSkipped(result.skipped);
+}
+
+function checkDiff(provider: JevProvider, rubric: Rubric, base: string): Promise<CheckResult> {
+  const diffs = parseDiff(diffToWorktree(base));
+  return checkTurn(provider, rubric, diffs, loadBaseline(), { signal: turnSignal() });
 }
 
 function printCheckJson(base: string, result: CheckResult | null, reason?: string): void {
@@ -81,7 +107,7 @@ function printCheckJson(base: string, result: CheckResult | null, reason?: strin
 
 async function audit(baseRef = 'HEAD'): Promise<void> {
   const rubric = loadRubric();
-  const provider = providerFromEnv();
+  const provider = cliProvider();
   if (!rubric || !provider) return skip(rubric, provider);
   const { findings, skipped } = await checkTurn(provider, rubric, parseDiff(diffToWorktree(baseRef)), []);
   writeJson(BASELINE_PATH, baselineFrom(findings));
@@ -101,14 +127,22 @@ function snapshot(): void {
 async function hook(): Promise<void> {
   await readHookInput(); // drain the payload; the turn state lives in the git dir
   const rubric = loadRubric();
-  const provider = providerFromEnv();
-  if (!rubric || !provider) return; // fail open, silent: allow the stop
+  const provider = cliProvider();
+  if (!rubric || !provider) return logMisses('hook', rubric, null); // fail open: allow the stop
   const base = readTurnBase();
-  const { actionable } = await checkTurn(provider, rubric, parseDiff(diffToWorktree(base)), loadBaseline());
+  const { actionable, skipped } = await checkDiff(provider, rubric, base);
+  logMisses('hook', rubric, skipped);
   const { decision, blocked } = stopDecisionOnce(actionable, readBlocked(base));
   if (!decision.decision) return;
   recordBlocked(base, blocked);
   console.log(JSON.stringify(decision));
+}
+
+// Store the API key owner-only in ~/.leash/.env, read by every later run (see env.ts).
+async function login(): Promise<void> {
+  const apiKey = await readSecret('TypeSafe API key (input hidden): ');
+  if (!apiKey) return void console.log('leash: no key entered - nothing saved.');
+  console.log(`leash: saved JEV_API_KEY to ${saveApiKey(apiKey)}`);
 }
 
 // Install the Stop + UserPromptSubmit hooks into the host's config (Claude Code or Codex),
@@ -144,6 +178,7 @@ function report(): void {
     const scope = rule.scope.length ? rule.scope.join(',') : '*';
     console.log(`- ${rule.id} [${rule.phase}] scope=${scope} repair>=${rule.repairAt} note>=${rule.noteAt}`);
   }
+  printMisses(5);
 }
 
 // Validate .leash/rubric.json and report the deterministic-first split. Exit 1 only
@@ -159,6 +194,24 @@ function compile(): void {
     return;
   }
   printSummary(summarize(rubric));
+  stampRubricSources(rubric);
+}
+
+// Record the instruction files this rubric was compiled from (see sources.ts).
+function stampRubricSources(rubric: Rubric): void {
+  const files = stampSources(instructionFiles(rubric));
+  writeJson(SOURCES_PATH, { version: 1, files });
+  console.log(`leash: recorded ${Object.keys(files).length} instruction file(s) in ${SOURCES_PATH}.`);
+}
+
+// SessionStart hook: if an instruction file changed since the last compile, tell the agent.
+async function session(): Promise<void> {
+  await readHookInput();
+  const rubric = tryLoadRubric();
+  if (!rubric) return;
+  const recorded = loadSources();
+  const nudge = recorded ? staleNudge(staleSources(recorded, stampSources(instructionFiles(rubric)))) : NO_STAMP_NUDGE;
+  if (nudge) console.log(JSON.stringify(sessionStartOutput(nudge)));
 }
 
 function printSummary(s: CompileSummary): void {
@@ -185,7 +238,7 @@ function guard(baseRef = 'HEAD'): void {
 async function editCheck(file?: string): Promise<void> {
   if (!file) return void console.log('usage: leash edit-check <file>');
   const findings = await editFindings(file);
-  if (findings === null) return skip(loadRubric(), providerFromEnv());
+  if (findings === null) return skip(loadRubric(), cliProvider());
   printFindings(findings);
 }
 
@@ -193,7 +246,7 @@ async function editCheck(file?: string): Promise<void> {
 // repair-band break back as context Claude can see. Silent on everything else.
 async function editHook(): Promise<void> {
   const path = (await readHookInput()).tool_input?.file_path;
-  const file = path ? repoRelative(path, repoRoot()) : null;
+  const file = path ? repoRelative(path, projectRoot()) : null;
   if (!file) return;
   const out = editHookOutput((await editFindings(file)) ?? []);
   if (out.hookSpecificOutput) console.log(JSON.stringify(out));
@@ -202,19 +255,18 @@ async function editHook(): Promise<void> {
 // New (non-baselined) edit-phase findings for `file`; null when there is no rubric or key.
 async function editFindings(file: string): Promise<Finding[] | null> {
   const rubric = loadRubric();
-  const provider = providerFromEnv();
+  const provider = cliProvider();
   if (!rubric || !provider) return null;
   const questions = questionsForFile(rubric, file, 'edit');
   if (isLeashPath(file) || isIgnored(file) || Object.keys(questions).length === 0) return [];
-  const { answers } = await provider.evaluate({ state: { file, diff: diffToWorktree('HEAD', file) }, questions });
+  const state = { file, diff: diffToWorktree('HEAD', file) };
+  const { answers } = await provider.evaluate({ state, questions, signal: turnSignal() });
   return newFindings(findingsForFile(rubric, file, answers, 'edit'), loadBaseline());
 }
 
-function repoRoot(): string {
-  return execSync('git rev-parse --show-toplevel', { encoding: 'utf8' }).trim();
-}
-
 main().catch((err: unknown) => {
-  console.error(`leash: ${err instanceof Error ? err.message : String(err)}`);
+  const message = err instanceof Error ? err.message : String(err);
+  logMiss(process.argv[2] ?? 'help', message);
+  console.error(`leash: ${message}`);
   process.exit(0); // advisory: never break the session
 });

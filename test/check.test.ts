@@ -1,5 +1,5 @@
 import { describe, expect, it } from 'vitest';
-import { checkTurn } from '../src/check.js';
+import { checkTurn, DEADLINE_REASON } from '../src/check.js';
 import type { JevProvider, JevRequest, JevResponse } from '../src/provider.js';
 import type { Rubric } from '../src/schema.js';
 
@@ -114,5 +114,32 @@ describe('checkTurn', () => {
     const provider = new FakeProvider(() => ({}));
     await checkTurn(provider, scoped, [{ file: 'docs/readme.md', patch: 'd' }], []);
     expect(provider.calls).toHaveLength(0);
+  });
+});
+
+describe('turn deadline', () => {
+  const files = [
+    { file: 'src/a.ts', patch: 'a' },
+    { file: 'src/b.ts', patch: 'b' },
+  ];
+
+  it('skips every file without calling Jev once the deadline has passed', async () => {
+    const provider = new FakeProvider(() => ({}));
+    const { skipped } = await checkTurn(provider, rubric, files, [], { signal: AbortSignal.abort() });
+    expect(provider.calls).toHaveLength(0);
+    expect(skipped).toEqual(files.map(({ file }) => ({ file, reason: DEADLINE_REASON })));
+  });
+
+  it('passes the signal to the provider and names the deadline when an in-flight call is cut', async () => {
+    const controller = new AbortController();
+    const provider: JevProvider = {
+      evaluate: (req) =>
+        new Promise((_resolve, reject) => {
+          req.signal?.addEventListener('abort', () => reject(new Error('aborted')));
+          controller.abort();
+        }),
+    };
+    const { skipped } = await checkTurn(provider, rubric, files.slice(0, 1), [], { signal: controller.signal });
+    expect(skipped).toEqual([{ file: 'src/a.ts', reason: DEADLINE_REASON }]);
   });
 });

@@ -6,6 +6,7 @@ describe('addLeashHooks', () => {
     const out = addLeashHooks({});
     expect(out.hooks?.UserPromptSubmit?.[0]?.hooks?.[0]?.command).toBe('leash snapshot');
     expect(out.hooks?.Stop?.[0]?.hooks?.[0]?.command).toBe('leash hook');
+    expect(out.hooks?.SessionStart?.[0]?.hooks?.[0]?.command).toBe('leash session');
   });
 
   it('is idempotent and preserves other hooks', () => {
@@ -21,6 +22,22 @@ describe('addLeashHooks', () => {
   it('keeps unrelated top-level settings', () => {
     const out = addLeashHooks({ model: 'sonnet' } as ClaudeSettings);
     expect(out.model).toBe('sonnet');
+  });
+});
+
+describe('hook timeouts', () => {
+  it('sets a host timeout on every Leash hook', () => {
+    const out = addLeashHooks({}, { editPhase: true });
+    expect(out.hooks?.Stop?.[0]?.hooks?.[0]?.timeout).toBe(90);
+    expect(out.hooks?.UserPromptSubmit?.[0]?.hooks?.[0]?.timeout).toBe(30);
+    expect(out.hooks?.PostToolUse?.[0]?.hooks?.[0]?.timeout).toBe(90);
+  });
+
+  it('re-running init upgrades an older install in place', () => {
+    const old: ClaudeSettings = { hooks: { Stop: [{ hooks: [{ type: 'command', command: 'leash hook' }] }] } };
+    const stop = addLeashHooks(old).hooks?.Stop;
+    expect(stop).toHaveLength(1);
+    expect(stop?.[0]?.hooks?.[0]?.timeout).toBe(90);
   });
 });
 

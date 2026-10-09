@@ -4,6 +4,38 @@ All notable changes to this project are documented here. Format: [Keep a Changel
 
 ## [Unreleased]
 
+## [0.13.0] - 2026-10-09
+
+### Added
+
+- **`leash bench [--sample N]`**: replays the last N commits as turns through the Stop hook's check. Reports request and turn latency (p50/p95/max), characters sent, and the token usage the API reports. It shows no price; multiply the tokens by your own rate. New exports: `timedProvider`, `benchReport`, `percentiles`.
+
+## [0.12.0] - 2026-10-09
+
+### Added
+
+- **Stale-rubric nudge.** `leash compile` now records a hash of each instruction file in `.leash/sources.json`: `CLAUDE.md`, `AGENTS.md`, and every Markdown file a rule cites as its `source`. Hashes ignore line endings. A new `SessionStart` hook, `leash session`, compares them with the files and, when one changed, gives the agent `additionalContext` telling it to update the rubric and recompile. `leash init` installs it for Claude Code and Codex. New exports: `instructionFiles`, `stampSources`, `staleSources`, `staleNudge`, `sessionStartOutput`, `hashText`, `SOURCES_PATH`.
+- Leash records its own sources (`.leash/sources.json`).
+
+## [0.11.0] - 2026-10-09
+
+### Added
+
+- **Turn deadline.** A turn's check now has a 60s budget (`LEASH_DEADLINE_MS`). Past it, files not yet judged are skipped as `turn deadline reached` and calls still in flight are cancelled, so the hook returns on time. `JevRequest` takes an optional `signal` (never sent on the wire); `checkTurn` takes `options.signal`.
+- **Host timeouts.** `leash init` sets `timeout` on every hook: Stop and per-edit 90s, snapshot 30s. It is the same key, in seconds, for Claude Code and Codex. Re-running `init` now upgrades an older install in place instead of skipping it.
+- **Miss log.** Each run where a hook let work through unchecked (no key, a failed call, the deadline, a crash) appends a JSON line to `leash-misses.log` in the git dir. The log is capped at 200 lines. `leash report` prints the last five.
+
+## [0.10.0] - 2026-10-09
+
+### Added
+
+- **`leash login`**: stores your API key in `~/.leash/.env`, owner-only. Prompts with hidden input on a terminal, or reads a piped key.
+- **Key files.** Settings now resolve from the process env, then the repo's `.env.local`, then `.env`, then `~/.leash/.env`. Only Leash's own keys (`JEV_*`, `TYPESAFE_AI_*`, `LEASH_*`) are read from those files. New exports: `resolveEnv`, `envFiles`, `parseEnvFile`, `saveApiKey`, `userEnvPath`.
+
+### Changed
+
+- The no-key skip message now points at `leash login`.
+
 ## [0.9.1] - 2026-10-04
 
 ### Fixed

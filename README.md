@@ -25,7 +25,7 @@ Leash only ever flags what a turn **newly** introduces. The baseline is one-way,
 only shrink. That is what makes it adoptable on an existing codebase from day one.
 
 Turn-check is the default (once per turn, on the whole diff, where the un-lintable
-questions actually have an answer). A per-edit mode is planned but off by default: at
+questions actually have an answer). A per-edit mode exists but is off by default: at
 Jev's edit-level precision, per-edit auto-repair risks the agent chasing phantoms.
 
 ## Install
@@ -34,8 +34,19 @@ Jev's edit-level precision, per-edit auto-repair risks the agent chasing phantom
 npm install -g @cmaintz/leash   # or: npx @cmaintz/leash <command>
 ```
 
-Set a key: `export JEV_API_KEY=...` (or `TYPESAFE_AI_BASE_URL` for a self-host / proxy /
-mock). No key means Leash no-ops and lets the edit through, always.
+Set a key once:
+
+```
+leash login               # prompts (input hidden); or pipe it: Get-Clipboard | leash login
+```
+
+That stores `JEV_API_KEY` in `~/.leash/.env`, readable only by you (mode 0600 on
+macOS/Linux; on Windows the file sits in your user profile and inherits its ACL). Leash
+looks for its settings in this order: the process env, then the repo's `.env.local`,
+then its `.env`, then `~/.leash/.env`. From those files it reads only its own keys
+(`JEV_*`, `TYPESAFE_AI_*`, `LEASH_*`), never your app's other secrets.
+`TYPESAFE_AI_BASE_URL` points it at a self-host, proxy or mock. No key means Leash
+no-ops and lets the edit through, always.
 
 ## Use
 
@@ -47,8 +58,16 @@ leash check [baseRef]     # print what this turn newly broke (default base: HEAD
                           #   --turn: since the turn snapshot; --json: machine-readable
 leash guard [baseRef]     # fail if the rubric was loosened vs baseRef (for CI)
 leash calibrate [N]       # score rules against the last N commits (default 20); flag dead ones
+leash bench [N]           # latency, size and tokens of replaying the last N commits as turns
 leash edit-check <file>   # opt-in per-edit check of one file (see below)
+leash login               # store your API key in ~/.leash/.env
 ```
+
+`leash bench` replays your last N commits (default 20) as turns through the same check
+the Stop hook runs. It reports p50/p95/max latency per request and per turn, characters
+sent, and the tokens the API reports. It has no price table, so multiply the tokens by
+your plan's rate. Run it once before you install the hooks, to see the cost on your own
+repo and machine.
 
 `leash calibrate` runs each active turn-phase rule over the diffs of the last N commits
 (`--sample N` or a bare `N`, default 20) and reports how often each actually fires. A rule
@@ -85,12 +104,28 @@ optional `scope`, `source` (the instruction-file line it came from), and `handle
 }
 ```
 
+## Time budget and the miss log
+
+A hook must never stall the agent. Each Jev request times out after 20s
+(`LEASH_TIMEOUT_MS`), and a whole turn's check gets 60s (`LEASH_DEADLINE_MS`). When
+the time is up, unjudged files are skipped, any request still waiting is cancelled,
+and the turn goes through. `leash init` also gives each hook a host timeout (90s for
+the Stop and per-edit hooks, 30s for the snapshot) as a backstop.
+
+Failing open is never silent. Each time a hook lets work through unchecked, it adds a
+line to `leash-misses.log` in the git dir, never in your working tree. That covers no
+key, a failed call, and the deadline. `leash report` shows the last few entries.
+
 ## Claude Code (turn hook)
 
-Leash runs as two Claude Code hooks: a `UserPromptSubmit` hook snapshots the working
-tree at the start of a turn, and a `Stop` hook checks what that turn changed and, on a
-repair-band break, blocks the stop and hands the agent the exact rules to fix so it
-repairs them in the same turn. Install both in one command:
+Leash runs as three Claude Code hooks:
+
+- a `SessionStart` hook warns the agent when the rubric is out of date (see below);
+- a `UserPromptSubmit` hook snapshots the working tree at the start of a turn;
+- a `Stop` hook checks what that turn changed. On a repair-band break it blocks the stop
+  and hands the agent the exact rules to fix, so it repairs them in the same turn.
+
+Install all three in one command:
 
 ```
 leash init              # writes the hooks into ~/.claude/settings.json (idempotent)
@@ -101,17 +136,25 @@ leash uninstall         # removes them again
 `init` also drops a `/leash-rubric` slash command into `.claude/commands/` (personal, or
 in-repo with `--project`) that drives the authoring procedure in
 [docs/COMPILE.md](docs/COMPILE.md); `uninstall` removes it. It merges into whatever is
-already there and never duplicates. Under the hood it adds the two hooks to
-`.claude/settings.json`:
+already there and never duplicates; re-running it upgrades an older install. Under the
+hood it adds the three hooks to `.claude/settings.json`:
 
 ```json
 {
   "hooks": {
-    "UserPromptSubmit": [{ "hooks": [{ "type": "command", "command": "leash snapshot" }] }],
-    "Stop": [{ "hooks": [{ "type": "command", "command": "leash hook" }] }]
+    "SessionStart": [{ "hooks": [{ "type": "command", "command": "leash session", "timeout": 30 }] }],
+    "UserPromptSubmit": [{ "hooks": [{ "type": "command", "command": "leash snapshot", "timeout": 30 }] }],
+    "Stop": [{ "hooks": [{ "type": "command", "command": "leash hook", "timeout": 90 }] }]
   }
 }
 ```
+
+`leash compile` records a hash of each instruction file the rubric came from:
+`CLAUDE.md`, `AGENTS.md`, and any Markdown file a rule cites as its `source`. The record
+goes in `.leash/sources.json`, which you commit. At session start, `leash session` compares
+those hashes with the files. If one changed, the agent is told to bring the rubric up to
+date (via `/leash-rubric`) and run `leash compile` again. Line-ending differences don't
+count as changes, and with no rubric it stays silent.
 
 `leash snapshot` records the pre-turn state as a git tree of the whole working tree -
 tracked **and untracked** files, minus anything `.gitignore`d - built in a scratch index
@@ -148,7 +191,10 @@ That adds:
 {
   "hooks": {
     "PostToolUse": [
-      { "matcher": "Edit|Write|MultiEdit", "hooks": [{ "type": "command", "command": "leash edit-hook" }] }
+      {
+        "matcher": "Edit|Write|MultiEdit",
+        "hooks": [{ "type": "command", "command": "leash edit-hook", "timeout": 90 }]
+      }
     ]
   }
 }
@@ -163,9 +209,9 @@ outside the repo. To check one file by hand, use `leash edit-check <file>`.
 ## Codex (turn hook)
 
 Codex's hook system is the same contract as Claude Code's - the same `hooks.json`
-shape, the same no-matcher `Stop` and `UserPromptSubmit` events, and the same
-`{"decision":"block","reason":...}` output (Codex injects `reason` as the next user
-message) - so the same two hooks drive it. Install with `--codex`:
+shape, the same `SessionStart`, `UserPromptSubmit` and `Stop` events, the same `timeout`
+key in seconds, and the same `{"decision":"block","reason":...}` output (Codex injects
+`reason` as the next user message). The same three hooks drive it. Install with `--codex`:
 
 ```
 leash init --codex               # writes ~/.codex/hooks.json
@@ -173,7 +219,7 @@ leash init --codex --project     # or this repo's .codex/hooks.json
 leash uninstall --codex
 ```
 
-It writes the same `snapshot` + `hook` pair. Codex loads hooks straight from that
+It writes the same `session`, `snapshot` and `hook` set. Codex loads hooks straight from that
 `hooks.json` (no separate enable flag), so `leash init --codex` is all it takes; a
 project-local `.codex/` must be trusted first. The same once-per-finding rule as on
 Claude Code applies, so continuations are re-checked but nothing can loop.
@@ -199,7 +245,8 @@ into the session as a single follow-up prompt (`client.session.prompt`), so the 
 repairs it in a new turn rather than the same one. Loop guard: at most one check and
 one nudge per user turn (the repair turn is not re-checked, unlike Claude Code / Codex), and Leash's own nudge
 never resets the turn. It needs `leash` on `PATH` (a global install); if it is missing,
-the plugin fails open and stays silent.
+the plugin fails open and stays silent. The stale-rubric session nudge is not wired for
+OpenCode; run `leash session` by hand after editing your instruction files.
 
 ## Machine-readable checks
 

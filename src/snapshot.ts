@@ -14,8 +14,8 @@ const LEGACY_BASE = join('.leash', 'turn-base');
 const MAX_BUFFER = 64 * 1024 * 1024;
 
 /** Absolute path of the repo's git dir. */
-function gitDir(): string {
-  return execSync('git rev-parse --absolute-git-dir', { encoding: 'utf8' }).trim();
+export function gitDir(): string {
+  return execSync('git rev-parse --absolute-git-dir', { encoding: 'utf8', stdio: ['pipe', 'pipe', 'ignore'] }).trim();
 }
 
 /** Tree id of the current working tree, untracked files included, real index untouched. */

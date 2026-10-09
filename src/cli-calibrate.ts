@@ -2,20 +2,19 @@ import { execSync } from 'node:child_process';
 import { calibrationReport, tallyFires, type RuleCalibration } from './calibrate.js';
 import { sampleSize } from './cli-args.js';
 import { skip } from './cli-output.js';
-import { loadRubric } from './cli-store.js';
+import { cliProvider, loadRubric } from './cli-store.js';
 import { parseDiff, type FileDiff } from './diff.js';
-import { providerFromEnv } from './provider.js';
 
 export async function calibrate(): Promise<void> {
   const rubric = loadRubric();
-  const provider = providerFromEnv();
+  const provider = cliProvider();
   if (!rubric || !provider) return skip(rubric, provider);
   const commits = commitDiffs(sampleSize());
   const report = calibrationReport(await tallyFires(provider, rubric, commits), commits.length);
   printCalibration(report, commits.length);
 }
 
-function commitDiffs(sample: number): FileDiff[][] {
+export function commitDiffs(sample: number): FileDiff[][] {
   const log = execSync(`git log -n ${sample} --format=%H`, { encoding: 'utf8' });
   const shas = log.trim().split('\n').filter(Boolean);
   return shas.map((sha) =>
