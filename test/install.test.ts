@@ -1,5 +1,12 @@
 import { describe, expect, it } from 'vitest';
-import { addLeashHooks, hostConfigPath, removeLeashHooks, type ClaudeSettings } from '../src/install.js';
+import {
+  addEditHook,
+  addLeashHooks,
+  hasFoundryAdapter,
+  hostConfigPath,
+  removeLeashHooks,
+  type ClaudeSettings,
+} from '../src/install.js';
 
 describe('addLeashHooks', () => {
   it('adds both hooks to empty settings', () => {
@@ -78,5 +85,33 @@ describe('removeLeashHooks', () => {
     expect(out.hooks?.Stop).toHaveLength(1);
     expect(out.hooks?.Stop?.[0]?.hooks?.[0]?.command).toBe('other-tool run');
     expect(out.hooks?.UserPromptSubmit).toBeUndefined();
+  });
+});
+
+describe('Foundry library mode', () => {
+  const adapter = (args: string[]): ClaudeSettings => ({
+    hooks: {
+      Stop: [{ hooks: [{ type: 'command', command: 'C:\\Program Files\\Git\\bin\\bash.exe', args } as never] }],
+    },
+  });
+
+  it('spots the leash.sh adapter in a command or in args, Windows paths included', () => {
+    expect(hasFoundryAdapter(adapter(['C:/Users/me/.claude/hooks/leash.sh', 'hook']))).toBe(true);
+    expect(hasFoundryAdapter(adapter(['C:\\Users\\me\\.claude\\hooks\\leash.sh', 'hook']))).toBe(true);
+    expect(hasFoundryAdapter({ hooks: { Stop: [{ hooks: [{ type: 'command', command: 'leash.sh hook' }] }] } })).toBe(
+      true,
+    );
+  });
+
+  it('ignores Leash own hooks and look-alike scripts', () => {
+    expect(hasFoundryAdapter(addLeashHooks({}, { editPhase: true }))).toBe(false);
+    expect(hasFoundryAdapter(adapter(['/hooks/my-leash.sh']))).toBe(false);
+    expect(hasFoundryAdapter({})).toBe(false);
+  });
+
+  it('adds only the per-edit hook', () => {
+    const out = addEditHook({});
+    expect(Object.keys(out.hooks ?? {})).toEqual(['PostToolUse']);
+    expect(out.hooks?.PostToolUse?.[0]?.hooks?.[0]?.command).toBe('leash edit-hook');
   });
 });

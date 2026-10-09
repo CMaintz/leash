@@ -4,6 +4,17 @@ All notable changes to this project are documented here. Format: [Keep a Changel
 
 ## [Unreleased]
 
+## [0.14.0] - 2026-10-09
+
+### Added
+
+- **Host-aware `init`.** When cmaintz-skills' `hooks/leash.sh` (the Foundry adapter) is registered in the global or project Claude Code settings, `leash init` installs no turn hooks and removes any it installed before, so a repo is never double-hooked. `--edit-phase` still adds the per-edit hook; `--standalone` forces Leash's own hooks. New exports: `hasFoundryAdapter`, `addEditHook`.
+- **Gate boundary test.** `test/boundary.test.ts` fails if a workflow, mise task or npm script in this repo runs a Jev-backed command. `guard`, `compile` and `report` stay allowed.
+
+### Fixed
+
+- `.leash/sources.json` restamped after the 0.13 README changes, which had left a false stale-rubric nudge.
+
 ## [0.13.0] - 2026-10-09
 
 ### Added

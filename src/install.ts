@@ -81,6 +81,21 @@ function addHook(settings: ClaudeSettings, spec: HookSpec): ClaudeSettings {
   return { ...settings, hooks: { ...(settings.hooks ?? {}), [spec.event]: [...others, group] } };
 }
 
+/** Add only the opt-in per-edit hook (library mode: Foundry drives the turn hooks). */
+export function addEditHook(settings: ClaudeSettings): ClaudeSettings {
+  return addHook(settings, EDIT_HOOK);
+}
+
+// cmaintz-skills' hooks/leash.sh runs Leash's turn hooks from Foundry's hook layer. Its
+// entries are registered by hand (often as `bash.exe` with the script in `args`), so
+// match the script name anywhere in the hook config rather than a known shape.
+const FOUNDRY_ADAPTER = /(?<![\w.-])leash\.sh\b/;
+
+/** True when `settings` already runs Leash through the Foundry adapter. */
+export function hasFoundryAdapter(settings: ClaudeSettings): boolean {
+  return FOUNDRY_ADAPTER.test(JSON.stringify(settings.hooks ?? {}));
+}
+
 /** Remove every hook group that runs a `leash` command. */
 export function removeLeashHooks(settings: ClaudeSettings): ClaudeSettings {
   const hooks: Record<string, HookGroup[]> = {};

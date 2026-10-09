@@ -30,7 +30,15 @@ import { baselineFrom, findingsForFile, isIgnored, newFindings, questionsForFile
 import { rubricDrift } from './guard.js';
 import { editHookOutput, readHookInput, repoRelative, stopDecision, stopDecisionOnce } from './hook.js';
 import { writeRubricCommand, removeRubricCommand } from './commands.js';
-import { addLeashHooks, hostConfigPath, loadSettings, removeLeashHooks, saveSettings } from './install.js';
+import {
+  addEditHook,
+  addLeashHooks,
+  hasFoundryAdapter,
+  hostConfigPath,
+  loadSettings,
+  removeLeashHooks,
+  saveSettings,
+} from './install.js';
 import { removeOpenCodePlugin, writeOpenCodePlugin } from './opencode.js';
 import { isLeashPath } from './patch.js';
 import { saveApiKey } from './env.js';
@@ -72,7 +80,7 @@ async function main(): Promise<void> {
       console.log(
         'leash <check|audit|report|compile|guard|calibrate|edit-check|init|uninstall> [arg]\n' +
           '  check flags: --turn (diff since the turn snapshot), --json (machine-readable result)\n' +
-          '  init/uninstall flags: --project (this repo, default global); --codex or --opencode (default Claude Code); --edit-phase (also wire the per-edit check)',
+          '  init/uninstall flags: --project (this repo, default global); --codex or --opencode (default Claude Code); --edit-phase (also wire the per-edit check); --standalone (install hooks even where Foundry drives Leash)',
       ),
   };
   await (commands[command] ?? commands.help)!();
@@ -147,13 +155,34 @@ async function login(): Promise<void> {
 
 // Install the Stop + UserPromptSubmit hooks into the host's config (Claude Code or Codex),
 // plus the /leash-rubric authoring command (Claude Code only - its command path is known).
-// OpenCode takes a plugin file instead (see opencode.ts).
+// OpenCode takes a plugin file instead (see opencode.ts). On a Foundry machine (the
+// cmaintz-skills leash.sh adapter is registered) Claude Code gets library mode instead.
 function install(project: boolean, host: Target): void {
   if (host === 'opencode') return void console.log(`leash: added OpenCode plugin at ${writeOpenCodePlugin(project)}`);
   const path = hostConfigPath(host, project);
+  if (host === 'claude' && foundryDrivesLeash()) libraryMode(path);
+  else standaloneMode(path);
+  if (host === 'claude') console.log(`leash: added /leash-rubric command at ${writeRubricCommand(project)}`);
+}
+
+function standaloneMode(path: string): void {
   saveSettings(path, addLeashHooks(loadSettings(path), { editPhase: hasFlag('--edit-phase') }));
   console.log(`leash: installed snapshot + hook into ${path}`);
-  if (host === 'claude') console.log(`leash: added /leash-rubric command at ${writeRubricCommand(project)}`);
+}
+
+// Foundry's adapter fires the turn hooks, so installing ours too would check every turn
+// twice. Drop any we installed earlier; the per-edit hook has no adapter, so it stays ours.
+function libraryMode(path: string): void {
+  const settings = removeLeashHooks(loadSettings(path));
+  saveSettings(path, hasFlag('--edit-phase') ? addEditHook(settings) : settings);
+  console.log(`leash: Foundry's leash.sh hook drives Leash here, so ${path} gets no turn hooks.`);
+  console.log('leash: set LEASH_ENABLED=1 (mise [env]) to turn it on; `init --standalone` installs ours instead.');
+}
+
+// The adapter may sit in the global or the project settings; either one drives every turn.
+function foundryDrivesLeash(): boolean {
+  if (hasFlag('--standalone')) return false;
+  return [false, true].some((project) => hasFoundryAdapter(loadSettings(hostConfigPath('claude', project))));
 }
 
 function uninstallHooks(project: boolean, host: Target): void {
