@@ -15,6 +15,7 @@ import {
   loadBaseline,
   loadRubric,
   loadRubricAt,
+  loadSources,
   projectRoot,
   RUBRIC_PATH,
   tryLoadRubric,
@@ -32,6 +33,15 @@ import { addLeashHooks, hostConfigPath, loadSettings, removeLeashHooks, saveSett
 import { removeOpenCodePlugin, writeOpenCodePlugin } from './opencode.js';
 import { isLeashPath } from './patch.js';
 import { saveApiKey } from './env.js';
+import {
+  instructionFiles,
+  NO_STAMP_NUDGE,
+  sessionStartOutput,
+  SOURCES_PATH,
+  stampSources,
+  staleNudge,
+  staleSources,
+} from './sources.js';
 import { readSecret } from './secret.js';
 import { diffToWorktree, readBlocked, readTurnBase, recordBlocked, writeTurnBase } from './snapshot.js';
 import { parseRubric, type Finding, type Rubric } from './schema.js';
@@ -50,6 +60,7 @@ async function main(): Promise<void> {
     'edit-check': () => editCheck(arg),
     snapshot: () => snapshot(),
     hook: () => hook(),
+    session: () => session(),
     'edit-hook': () => editHook(),
     login: () => login(),
     init: () => install(hasFlag('--project'), targetFlag()),
@@ -181,6 +192,24 @@ function compile(): void {
     return;
   }
   printSummary(summarize(rubric));
+  stampRubricSources(rubric);
+}
+
+// Record the instruction files this rubric was compiled from (see sources.ts).
+function stampRubricSources(rubric: Rubric): void {
+  const files = stampSources(instructionFiles(rubric));
+  writeJson(SOURCES_PATH, { version: 1, files });
+  console.log(`leash: recorded ${Object.keys(files).length} instruction file(s) in ${SOURCES_PATH}.`);
+}
+
+// SessionStart hook: if an instruction file changed since the last compile, tell the agent.
+async function session(): Promise<void> {
+  await readHookInput();
+  const rubric = tryLoadRubric();
+  if (!rubric) return;
+  const recorded = loadSources();
+  const nudge = recorded ? staleNudge(staleSources(recorded, stampSources(instructionFiles(rubric)))) : NO_STAMP_NUDGE;
+  if (nudge) console.log(JSON.stringify(sessionStartOutput(nudge)));
 }
 
 function printSummary(s: CompileSummary): void {

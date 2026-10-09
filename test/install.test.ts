@@ -6,6 +6,7 @@ describe('addLeashHooks', () => {
     const out = addLeashHooks({});
     expect(out.hooks?.UserPromptSubmit?.[0]?.hooks?.[0]?.command).toBe('leash snapshot');
     expect(out.hooks?.Stop?.[0]?.hooks?.[0]?.command).toBe('leash hook');
+    expect(out.hooks?.SessionStart?.[0]?.hooks?.[0]?.command).toBe('leash session');
   });
 
   it('is idempotent and preserves other hooks', () => {

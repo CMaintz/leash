@@ -110,10 +110,14 @@ key, a failed call, and the deadline. `leash report` shows the last few entries.
 
 ## Claude Code (turn hook)
 
-Leash runs as two Claude Code hooks: a `UserPromptSubmit` hook snapshots the working
-tree at the start of a turn, and a `Stop` hook checks what that turn changed and, on a
-repair-band break, blocks the stop and hands the agent the exact rules to fix so it
-repairs them in the same turn. Install both in one command:
+Leash runs as three Claude Code hooks:
+
+- a `SessionStart` hook warns the agent when the rubric is out of date (see below);
+- a `UserPromptSubmit` hook snapshots the working tree at the start of a turn;
+- a `Stop` hook checks what that turn changed. On a repair-band break it blocks the stop
+  and hands the agent the exact rules to fix, so it repairs them in the same turn.
+
+Install all three in one command:
 
 ```
 leash init              # writes the hooks into ~/.claude/settings.json (idempotent)
@@ -124,17 +128,25 @@ leash uninstall         # removes them again
 `init` also drops a `/leash-rubric` slash command into `.claude/commands/` (personal, or
 in-repo with `--project`) that drives the authoring procedure in
 [docs/COMPILE.md](docs/COMPILE.md); `uninstall` removes it. It merges into whatever is
-already there and never duplicates. Under the hood it adds the two hooks to
-`.claude/settings.json`:
+already there and never duplicates; re-running it upgrades an older install. Under the
+hood it adds the three hooks to `.claude/settings.json`:
 
 ```json
 {
   "hooks": {
-    "UserPromptSubmit": [{ "hooks": [{ "type": "command", "command": "leash snapshot" }] }],
-    "Stop": [{ "hooks": [{ "type": "command", "command": "leash hook" }] }]
+    "SessionStart": [{ "hooks": [{ "type": "command", "command": "leash session", "timeout": 30 }] }],
+    "UserPromptSubmit": [{ "hooks": [{ "type": "command", "command": "leash snapshot", "timeout": 30 }] }],
+    "Stop": [{ "hooks": [{ "type": "command", "command": "leash hook", "timeout": 90 }] }]
   }
 }
 ```
+
+`leash compile` records a hash of each instruction file the rubric came from:
+`CLAUDE.md`, `AGENTS.md`, and any Markdown file a rule cites as its `source`. The record
+goes in `.leash/sources.json`, which you commit. At session start, `leash session` compares
+those hashes with the files. If one changed, the agent is told to bring the rubric up to
+date (via `/leash-rubric`) and run `leash compile` again. Line-ending differences don't
+count as changes, and with no rubric it stays silent.
 
 `leash snapshot` records the pre-turn state as a git tree of the whole working tree -
 tracked **and untracked** files, minus anything `.gitignore`d - built in a scratch index
@@ -171,7 +183,10 @@ That adds:
 {
   "hooks": {
     "PostToolUse": [
-      { "matcher": "Edit|Write|MultiEdit", "hooks": [{ "type": "command", "command": "leash edit-hook" }] }
+      {
+        "matcher": "Edit|Write|MultiEdit",
+        "hooks": [{ "type": "command", "command": "leash edit-hook", "timeout": 90 }]
+      }
     ]
   }
 }
@@ -186,9 +201,9 @@ outside the repo. To check one file by hand, use `leash edit-check <file>`.
 ## Codex (turn hook)
 
 Codex's hook system is the same contract as Claude Code's - the same `hooks.json`
-shape, the same no-matcher `Stop` and `UserPromptSubmit` events, and the same
-`{"decision":"block","reason":...}` output (Codex injects `reason` as the next user
-message) - so the same two hooks drive it. Install with `--codex`:
+shape, the same `SessionStart`, `UserPromptSubmit` and `Stop` events, the same `timeout`
+key in seconds, and the same `{"decision":"block","reason":...}` output (Codex injects
+`reason` as the next user message). The same three hooks drive it. Install with `--codex`:
 
 ```
 leash init --codex               # writes ~/.codex/hooks.json
@@ -196,7 +211,7 @@ leash init --codex --project     # or this repo's .codex/hooks.json
 leash uninstall --codex
 ```
 
-It writes the same `snapshot` + `hook` pair. Codex loads hooks straight from that
+It writes the same `session`, `snapshot` and `hook` set. Codex loads hooks straight from that
 `hooks.json` (no separate enable flag), so `leash init --codex` is all it takes; a
 project-local `.codex/` must be trusted first. The same once-per-finding rule as on
 Claude Code applies, so continuations are re-checked but nothing can loop.
@@ -222,7 +237,8 @@ into the session as a single follow-up prompt (`client.session.prompt`), so the 
 repairs it in a new turn rather than the same one. Loop guard: at most one check and
 one nudge per user turn (the repair turn is not re-checked, unlike Claude Code / Codex), and Leash's own nudge
 never resets the turn. It needs `leash` on `PATH` (a global install); if it is missing,
-the plugin fails open and stays silent.
+the plugin fails open and stays silent. The stale-rubric session nudge is not wired for
+OpenCode; run `leash session` by hand after editing your instruction files.
 
 ## Machine-readable checks
 

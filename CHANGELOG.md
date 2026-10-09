@@ -4,6 +4,13 @@ All notable changes to this project are documented here. Format: [Keep a Changel
 
 ## [Unreleased]
 
+## [0.12.0] - 2026-10-09
+
+### Added
+
+- **Stale-rubric nudge.** `leash compile` now records a hash of each instruction file in `.leash/sources.json`: `CLAUDE.md`, `AGENTS.md`, and every Markdown file a rule cites as its `source`. Hashes ignore line endings. A new `SessionStart` hook, `leash session`, compares them with the files and, when one changed, gives the agent `additionalContext` telling it to update the rubric and recompile. `leash init` installs it for Claude Code and Codex. New exports: `instructionFiles`, `stampSources`, `staleSources`, `staleNudge`, `sessionStartOutput`, `hashText`, `SOURCES_PATH`.
+- Leash records its own sources (`.leash/sources.json`).
+
 ## [0.11.0] - 2026-10-09
 
 ### Added

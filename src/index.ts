@@ -33,6 +33,17 @@ export type { ClaudeSettings, Host, InstallOptions } from './install.js';
 export { chunkPatch, isBinaryPatch, isLeashPath, MAX_PATCH_CHARS, mergeAnswers } from './patch.js';
 export { envFiles, parseEnvFile, resolveEnv, saveApiKey, userEnvPath } from './env.js';
 export { parseRubric } from './schema.js';
+export {
+  hashText,
+  instructionFiles,
+  NO_STAMP_NUDGE,
+  sessionStartOutput,
+  SOURCES_PATH,
+  stampSources,
+  staleNudge,
+  staleSources,
+} from './sources.js';
+export type { SourceStamp } from './sources.js';
 export type { Baseline, Band, Finding, Phase, Rubric, Rule } from './schema.js';
 export { DEFAULT_TIMEOUT_MS, positiveMs, postJson, providerFromEnv, TypeSafeProvider } from './provider.js';
 export {

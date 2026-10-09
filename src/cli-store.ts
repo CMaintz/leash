@@ -4,6 +4,7 @@ import { envFiles, resolveEnv } from './env.js';
 import { DEFAULT_DEADLINE_MS } from './check.js';
 import { positiveMs, providerFromEnv, type JevProvider } from './provider.js';
 import { parseRubric, type Rubric } from './schema.js';
+import { SOURCES_PATH, type SourceStamp } from './sources.js';
 
 export const RUBRIC_PATH = '.leash/rubric.json';
 export const BASELINE_PATH = '.leash/baseline.json';
@@ -63,4 +64,14 @@ export function cliProvider(): JevProvider | null {
 /** Aborts once the turn budget (LEASH_DEADLINE_MS, default 60s) is spent. */
 export function turnSignal(): AbortSignal {
   return AbortSignal.timeout(positiveMs(leashEnv().LEASH_DEADLINE_MS, DEFAULT_DEADLINE_MS));
+}
+
+/** The instruction-file stamp `leash compile` recorded, or null when there is none. */
+export function loadSources(): SourceStamp | null {
+  try {
+    const parsed = JSON.parse(readFileSync(SOURCES_PATH, 'utf8')) as { files?: SourceStamp };
+    return parsed.files && typeof parsed.files === 'object' ? parsed.files : null;
+  } catch {
+    return null;
+  }
 }

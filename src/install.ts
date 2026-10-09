@@ -27,8 +27,10 @@ interface HookSpec {
 
 // Host timeouts sit above Leash's own turn deadline (LEASH_DEADLINE_MS, default 60s), so
 // Leash normally finishes and logs its misses; the host kill is only the backstop.
-/** The turn hooks Leash always installs: snapshot at turn start, check at turn end. */
+/** The hooks Leash always installs: a stale-rubric nudge at session start, a snapshot at
+ * turn start, and the check at turn end. */
 const TURN_HOOKS: readonly HookSpec[] = [
+  { event: 'SessionStart', command: 'leash session', timeout: 30 },
   { event: 'UserPromptSubmit', command: 'leash snapshot', timeout: 30 },
   { event: 'Stop', command: 'leash hook', timeout: 90 },
 ];
