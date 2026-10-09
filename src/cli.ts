@@ -173,8 +173,11 @@ function standaloneMode(path: string): void {
 // Foundry's adapter fires the turn hooks, so installing ours too would check every turn
 // twice. Drop any we installed earlier; the per-edit hook has no adapter, so it stays ours.
 function libraryMode(path: string): void {
-  const settings = removeLeashHooks(loadSettings(path));
-  saveSettings(path, hasFlag('--edit-phase') ? addEditHook(settings) : settings);
+  const before = loadSettings(path);
+  const pruned = removeLeashHooks(before);
+  const after = hasFlag('--edit-phase') ? addEditHook(pruned) : pruned;
+  // Nothing of ours to remove or add: leave the file alone (and don't create one).
+  if (JSON.stringify(after.hooks ?? {}) !== JSON.stringify(before.hooks ?? {})) saveSettings(path, after);
   console.log(`leash: Foundry's leash.sh hook drives Leash here, so ${path} gets no turn hooks.`);
   console.log('leash: set LEASH_ENABLED=1 (mise [env]) to turn it on; `init --standalone` installs ours instead.');
 }
