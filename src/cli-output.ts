@@ -20,6 +20,13 @@ export function printFindings(findings: Finding[]): void {
   if (repairs.length) console.log(`\nleash: repair ${repairs.length} rule break(s) above, then continue.`);
 }
 
+/** Findings the baseline hides. The baseline works per rule and file, so a fresh break of
+ * an accepted rule in an accepted file lands here; a person can still see it. */
+export function printBaselined(findings: Finding[], actionable: Finding[]): void {
+  const shown = new Set(actionable);
+  for (const f of findings.filter((x) => !shown.has(x))) console.log(`  [baselined ${f.band}] ${f.message}`);
+}
+
 export function printSkipped(skipped: Skipped[]): void {
   for (const s of skipped) console.log(`  [skipped] ${s.file}: ${s.reason}`);
 }

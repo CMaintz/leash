@@ -3,6 +3,7 @@
 // deterministic-first split, so rules a linter already covers are visibly deferred, not
 // spent on a Jev call.
 
+import { matchGlob } from './engine.js';
 import type { Rubric } from './schema.js';
 
 /** A rule handed to a deterministic tool instead of Jev. */
@@ -36,4 +37,19 @@ export function summarize(rubric: Rubric): CompileSummary {
     },
     deferrals,
   };
+}
+
+/** A scope glob that matches none of the repo's files. */
+export interface DeadScope {
+  id: string;
+  glob: string;
+}
+
+// Scope globs of active rules that match no file in `files`: almost always a typo, or a
+// root-only pattern like `*.ts` meant as `**/*.ts`. Such a rule silently never runs.
+export function deadScopes(rubric: Rubric, files: readonly string[]): DeadScope[] {
+  return rubric.rules
+    .filter((rule) => !rule.handledBy)
+    .flatMap((rule) => rule.scope.map((glob) => ({ id: rule.id, glob })))
+    .filter(({ glob }) => !files.some((file) => matchGlob(glob, file)));
 }

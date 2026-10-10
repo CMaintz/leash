@@ -9,8 +9,8 @@ export { checkTurn, DEADLINE_REASON, DEFAULT_DEADLINE_MS, mapLimit } from './che
 export { capLines, logMiss, recentMisses } from './misses.js';
 export type { Miss } from './misses.js';
 export type { CheckOptions, CheckResult, Skipped } from './check.js';
-export { summarize } from './compile.js';
-export type { CompileSummary, Deferral } from './compile.js';
+export { deadScopes, summarize } from './compile.js';
+export type { CompileSummary, DeadScope, Deferral } from './compile.js';
 export { rubricDrift } from './guard.js';
 export type { RubricDrift } from './guard.js';
 export { parseDiff } from './diff.js';
@@ -27,7 +27,15 @@ export {
   questionsForFile,
   rulesForFile,
 } from './engine.js';
-export { editHookOutput, readHookInput, repoRelative, stopDecision, stopDecisionOnce } from './hook.js';
+export {
+  editedFiles,
+  editHookOutput,
+  isRepairPrompt,
+  readHookInput,
+  repoRelative,
+  stopDecision,
+  stopDecisionOnce,
+} from './hook.js';
 export type { EditHookOutput, StopDecision, StopHookInput } from './hook.js';
 export { RUBRIC_COMMAND, removeRubricCommand, rubricCommandPath, writeRubricCommand } from './commands.js';
 export { addEditHook, addLeashHooks, hasFoundryAdapter, hostConfigPath, removeLeashHooks } from './install.js';

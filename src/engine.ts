@@ -113,7 +113,8 @@ function inScope(scope: string[], file: string): boolean {
 // `{a,b}` = either (not nested). Everything else is literal.
 const GLOB_TOKEN = /\*\*\/|\*\*|\*|\?|\{[^{}]*\}|[^*?{]+|\{/g;
 
-function matchGlob(glob: string, file: string): boolean {
+/** True when repo-relative `file` matches scope `glob`. */
+export function matchGlob(glob: string, file: string): boolean {
   const pattern = (glob.match(GLOB_TOKEN) ?? []).map(globToken).join('');
   return new RegExp(`^${pattern}$`).test(file);
 }

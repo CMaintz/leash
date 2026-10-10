@@ -10,9 +10,14 @@
 //   continuations). Leash does not use that flag to skip: a continuation is exactly when a
 //   repair needs verifying. Instead it blocks at most once per finding per turn
 //   (stopDecisionOnce), so repairs are re-checked but a phantom finding cannot loop.
-//   PostToolUse: the edited file is `tool_input.file_path` on stdin (there is no
-//   CLAUDE_FILE_PATH env var), and plain exit-0 stdout only reaches the debug log - feedback
-//   Claude can see must go out as `hookSpecificOutput.additionalContext`.
+//   PostToolUse: Claude Code puts the edited file in `tool_input.file_path` (there is no
+//   CLAUDE_FILE_PATH env var). Codex edits through apply_patch: its matcher accepts Edit and
+//   Write as aliases, but `tool_input` is `{ command: <patch text> }`, so the files come from
+//   the patch's `*** Add/Update File:` lines. Plain exit-0 stdout only reaches the debug
+//   log - feedback the agent can see goes out as `hookSpecificOutput.additionalContext`
+//   (same field in Codex's post-tool-use output schema).
+//   Every event carries `session_id`, which keys the turn state so two sessions in one
+//   checkout don't share a snapshot.
 // Advisory throughout: on any doubt we allow the stop and stay silent.
 
 import { isAbsolute, relative } from 'node:path';
@@ -23,10 +28,28 @@ import type { Finding } from './schema.js';
 export interface StopHookInput {
   cwd?: string;
   hook_event_name?: string;
-  /** Codex: true once a Stop hook has already forced a continuation this turn. */
-  stop_hook_active?: boolean;
-  /** PostToolUse: the edited file, as an absolute path. */
-  tool_input?: { file_path?: string };
+  session_id?: string;
+  /** UserPromptSubmit: the prompt text. */
+  prompt?: string;
+  /** PostToolUse: Claude's edited file (absolute), or Codex's apply_patch text. */
+  tool_input?: { file_path?: string; command?: string };
+}
+
+/** The files a PostToolUse event edited: Claude's `file_path`, or every file named in a
+ * Codex apply_patch (`*** Add File:`, `*** Update File:`, `*** Move to:`). */
+export function editedFiles(input: StopHookInput): string[] {
+  const { file_path, command } = input.tool_input ?? {};
+  if (file_path) return [file_path];
+  if (!command) return [];
+  return [...command.matchAll(/^\*\*\* (?:Add File|Update File|Move to): (.+?)\s*$/gm)].map((m) => m[1]!);
+}
+
+const REPAIR_PREFIX = 'Leash: this turn broke ';
+
+/** True when a prompt is Leash's own repair request coming back as a new prompt (Codex
+ * injects the block reason as a user message); it continues the turn, not a new one. */
+export function isRepairPrompt(input: StopHookInput): boolean {
+  return input.prompt?.startsWith(REPAIR_PREFIX) ?? false;
 }
 
 /** The Stop-hook decision. An empty object means "allow the agent to stop". */
@@ -47,7 +70,7 @@ export interface EditHookOutput {
 export function stopDecision(actionable: Finding[]): StopDecision {
   const repairs = repairsOf(actionable);
   if (repairs.length === 0) return {};
-  const reason = `Leash: this turn broke ${repairs.length} project rule(s):\n${bullets(repairs)}\n\nRepair them, then continue.`;
+  const reason = `${REPAIR_PREFIX}${repairs.length} project rule(s):\n${bullets(repairs)}\n\nRepair them, then continue.`;
   return { decision: 'block', reason };
 }
 
@@ -89,6 +112,7 @@ export async function readHookInput(
   stream: NodeJS.ReadableStream = process.stdin,
   timeoutMs = STDIN_TIMEOUT_MS,
 ): Promise<StopHookInput> {
+  if ((stream as { isTTY?: boolean }).isTTY) return {}; // run by hand: no payload coming
   const text = await readWithin(stream, timeoutMs);
   if (!text) return {};
   try {
