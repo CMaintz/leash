@@ -44,8 +44,9 @@ const EDIT_HOOK: HookSpec = {
 };
 
 interface HookEntry {
-  type: 'command';
-  command: string;
+  type: string;
+  /** Absent on prompt/agent hooks, which Leash never installs. */
+  command?: string;
   timeout?: number;
 }
 
@@ -96,14 +97,19 @@ export function hasFoundryAdapter(settings: ClaudeSettings): boolean {
   return FOUNDRY_ADAPTER.test(JSON.stringify(settings.hooks ?? {}));
 }
 
-/** Remove every hook group that runs a `leash` command. */
+/** Remove every `leash` hook, keeping other hooks that share its group. */
 export function removeLeashHooks(settings: ClaudeSettings): ClaudeSettings {
   const hooks: Record<string, HookGroup[]> = {};
   for (const [event, groups] of Object.entries(settings.hooks ?? {})) {
-    const kept = groups.filter((group) => !group.hooks?.some((hook) => hook.command.startsWith('leash ')));
+    const kept = groups.map(withoutLeash).filter((group) => group.hooks === undefined || group.hooks.length > 0);
     if (kept.length > 0) hooks[event] = kept;
   }
   return { ...settings, hooks };
+}
+
+function withoutLeash(group: HookGroup): HookGroup {
+  if (!group.hooks) return group;
+  return { ...group, hooks: group.hooks.filter((hook) => !hook.command?.startsWith('leash ')) };
 }
 
 /** The host's hook-config path: project (in-repo) or global (home). */
@@ -112,12 +118,15 @@ export function hostConfigPath(host: Host, project: boolean): string {
   return project ? join(dir, file) : join(homedir(), dir, file);
 }
 
+/** The host config at `path`; {} when absent. Throws on a file that won't parse, so
+ * init/uninstall stop instead of overwriting the user's settings with Leash's alone. */
 export function loadSettings(path: string): ClaudeSettings {
   if (!existsSync(path)) return {};
   try {
     return JSON.parse(readFileSync(path, 'utf8')) as ClaudeSettings;
-  } catch {
-    return {};
+  } catch (err) {
+    const why = err instanceof Error ? err.message : String(err);
+    throw new Error(`${path} is not valid JSON (${why}); fix it and re-run - nothing was changed`);
   }
 }
 

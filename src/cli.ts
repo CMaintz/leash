@@ -13,21 +13,24 @@ import { logMiss } from './misses.js';
 import {
   BASELINE_PATH,
   cliProvider,
+  existsAt,
   loadBaseline,
+  loadBaselineAt,
   loadRubric,
   loadRubricAt,
   loadSources,
   projectRoot,
   RUBRIC_PATH,
   tryLoadRubric,
+  turnRubric,
   turnSignal,
   writeJson,
 } from './cli-store.js';
 import { checkTurn, type CheckResult } from './check.js';
 import { summarize, type CompileSummary } from './compile.js';
 import { parseDiff } from './diff.js';
-import { baselineFrom, findingsForFile, isIgnored, newFindings, questionsForFile } from './engine.js';
-import { rubricDrift } from './guard.js';
+import { findingsForFile, isIgnored, newFindings, questionsForFile, rebaseline } from './engine.js';
+import { baselineGrowth, rubricDrift } from './guard.js';
 import { editHookOutput, readHookInput, repoRelative, stopDecision, stopDecisionOnce } from './hook.js';
 import { writeRubricCommand, removeRubricCommand } from './commands.js';
 import {
@@ -57,6 +60,9 @@ import { parseRubric, type Finding, type Rubric } from './schema.js';
 import type { JevProvider } from './provider.js';
 
 async function main(): Promise<void> {
+  // Every path (.leash/, the git dir, env files) is repo-relative, so a session started
+  // in a subdirectory sees the same rubric as one started at the root.
+  process.chdir(projectRoot());
   const command = process.argv[2] ?? 'help';
   const arg = positional();
   const commands: Record<string, () => Promise<void> | void> = {
@@ -92,9 +98,10 @@ async function check(baseRef?: string): Promise<void> {
   const turn = hasFlag('--turn');
   const base = turn ? readTurnBase() : (baseRef ?? 'HEAD');
   const json = hasFlag('--json');
-  const rubric = loadRubric();
+  const rubric = turn ? turnRubric(base) : loadRubric();
   const provider = cliProvider();
-  const result = rubric && provider ? await checkDiff(provider, rubric, base) : null;
+  const baseline = turn ? loadBaselineAt(base) : loadBaseline();
+  const result = rubric && provider ? await checkDiff(provider, rubric, base, baseline) : null;
   if (turn) logMisses('check --turn', rubric, result?.skipped ?? null);
   if (json) return printCheckJson(base, result, result ? undefined : skipReason(rubric));
   if (!result) return skip(rubric, provider);
@@ -102,9 +109,9 @@ async function check(baseRef?: string): Promise<void> {
   printSkipped(result.skipped);
 }
 
-function checkDiff(provider: JevProvider, rubric: Rubric, base: string): Promise<CheckResult> {
+function checkDiff(provider: JevProvider, rubric: Rubric, base: string, baseline: string[]): Promise<CheckResult> {
   const diffs = parseDiff(diffToWorktree(base));
-  return checkTurn(provider, rubric, diffs, loadBaseline(), { signal: turnSignal() });
+  return checkTurn(provider, rubric, diffs, baseline, { signal: turnSignal() });
 }
 
 function printCheckJson(base: string, result: CheckResult | null, reason?: string): void {
@@ -117,9 +124,11 @@ async function audit(baseRef = 'HEAD'): Promise<void> {
   const rubric = loadRubric();
   const provider = cliProvider();
   if (!rubric || !provider) return skip(rubric, provider);
-  const { findings, skipped } = await checkTurn(provider, rubric, parseDiff(diffToWorktree(baseRef)), []);
-  writeJson(BASELINE_PATH, baselineFrom(findings));
-  console.log(`leash: accepted ${findings.length} finding(s) into ${BASELINE_PATH}`);
+  const diffs = parseDiff(diffToWorktree(baseRef));
+  const { findings, skipped } = await checkTurn(provider, rubric, diffs, []);
+  const judged = new Set(diffs.map((d) => d.file).filter((f) => !skipped.some((s) => s.file === f)));
+  writeJson(BASELINE_PATH, rebaseline(loadBaseline(), judged, findings));
+  console.log(`leash: accepted ${findings.length} finding(s) from ${judged.size} file(s) into ${BASELINE_PATH}`);
   printSkipped(skipped);
 }
 
@@ -134,11 +143,12 @@ function snapshot(): void {
 // a finding already blocked on this turn never blocks again, so nothing can loop.
 async function hook(): Promise<void> {
   await readHookInput(); // drain the payload; the turn state lives in the git dir
-  const rubric = loadRubric();
   const provider = cliProvider();
-  if (!rubric || !provider) return logMisses('hook', rubric, null); // fail open: allow the stop
+  if (!provider) return logMisses('hook', tryLoadRubric(), null); // fail open: allow the stop
   const base = readTurnBase();
-  const { actionable, skipped } = await checkDiff(provider, rubric, base);
+  const rubric = turnRubric(base);
+  if (!rubric) return;
+  const { actionable, skipped } = await checkDiff(provider, rubric, base, loadBaselineAt(base));
   logMisses('hook', rubric, skipped);
   const { decision, blocked } = stopDecisionOnce(actionable, readBlocked(base));
   if (!decision.decision) return;
@@ -255,15 +265,23 @@ function printSummary(s: CompileSummary): void {
 
 // Guard the rubric's integrity against a base ref: a loosening exits 1 for review.
 function guard(baseRef = 'HEAD'): void {
-  const current = tryLoadRubric();
-  if (!current) return void console.log(`leash: no usable rubric at ${RUBRIC_PATH} - nothing to guard.`);
-  const base = loadRubricAt(baseRef);
-  if (!base) return void console.log(`leash: no rubric at ${baseRef} - nothing to compare.`);
-  const { loosened } = rubricDrift(base, current);
-  if (loosened.length === 0) return void console.log('leash: rubric not loosened.');
-  console.error('leash: rubric loosened (needs review):');
-  for (const line of loosened) console.error(`  - ${line}`);
+  const problems = rubricProblems(baseRef);
+  if (problems === null) return void console.log(`leash: no rubric at ${baseRef} - nothing to compare.`);
+  problems.push(...baselineGrowth(loadBaselineAt(baseRef), loadBaseline()));
+  if (problems.length === 0) return void console.log('leash: rubric not loosened, baseline not grown.');
+  console.error('leash: rubric loosened or debt accepted (needs review):');
+  for (const line of problems) console.error(`  - ${line}`);
   process.exitCode = 1;
+}
+
+// null = no rubric at the base, so nothing to compare. A rubric the branch deleted or
+// broke is the strongest loosening of all, so it fails rather than passing as "nothing".
+function rubricProblems(baseRef: string): string[] | null {
+  if (!existsAt(baseRef, RUBRIC_PATH)) return null;
+  const base = loadRubricAt(baseRef);
+  const current = tryLoadRubric();
+  if (!current) return [`${RUBRIC_PATH}: missing or invalid`];
+  return base ? rubricDrift(base, current).loosened : [];
 }
 
 // Opt-in edit-phase check for one file's working-tree diff. Advisory, exit 0.
@@ -296,9 +314,14 @@ async function editFindings(file: string): Promise<Finding[] | null> {
   return newFindings(findingsForFile(rubric, file, answers, 'edit'), loadBaseline());
 }
 
+// Commands a person or CI runs on purpose report failure; everything a hook or a check
+// runs stays advisory and never breaks the session.
+const STRICT_COMMANDS = new Set(['init', 'uninstall', 'login', 'compile', 'guard']);
+
 main().catch((err: unknown) => {
+  const command = process.argv[2] ?? 'help';
   const message = err instanceof Error ? err.message : String(err);
-  logMiss(process.argv[2] ?? 'help', message);
+  logMiss(command, message);
   console.error(`leash: ${message}`);
-  process.exit(0); // advisory: never break the session
+  process.exit(STRICT_COMMANDS.has(command) ? 1 : 0);
 });

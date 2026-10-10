@@ -2,6 +2,7 @@ import { describe, expect, it } from 'vitest';
 import {
   bandFor,
   baselineFrom,
+  rebaseline,
   fingerprint,
   findingsForFile,
   newFindings,
@@ -9,6 +10,7 @@ import {
   rulesForFile,
 } from '../src/engine.js';
 import type { Answer } from '../src/provider.js';
+import type { Finding } from '../src/schema.js';
 import type { Rubric, Rule } from '../src/schema.js';
 
 const rule = (over: Partial<Rule> = {}): Rule => ({
@@ -91,5 +93,19 @@ describe('edit phase', () => {
     const findings = findingsForFile(mixed, 'src/a.ts', answers, 'edit');
     expect(findings).toHaveLength(1);
     expect(findings[0]!.ruleId).toBe('edit-rule');
+  });
+});
+
+describe('rebaseline', () => {
+  const f = (ruleId: string, file: string): Finding => ({ ruleId, file }) as Finding;
+
+  it('refreshes judged files and keeps everything else', () => {
+    const before = ['a::src/x.ts', 'a::src/untouched.ts', 'a::src/skipped.ts'];
+    const out = rebaseline(before, new Set(['src/x.ts', 'src/y.ts']), [f('b', 'src/y.ts')]);
+    expect(out).toEqual(['a::src/skipped.ts', 'a::src/untouched.ts', 'b::src/y.ts']);
+  });
+
+  it('a clean audit of nothing leaves the baseline alone', () => {
+    expect(rebaseline(['a::src/x.ts'], new Set(), [])).toEqual(['a::src/x.ts']);
   });
 });

@@ -32,9 +32,42 @@ export function loadRubricAt(ref: string): Rubric | null {
 }
 
 export function loadBaseline(): string[] {
-  if (!existsSync(BASELINE_PATH)) return [];
-  const parsed: unknown = JSON.parse(readFileSync(BASELINE_PATH, 'utf8'));
-  return Array.isArray(parsed) ? parsed.filter((x): x is string => typeof x === 'string') : [];
+  return existsSync(BASELINE_PATH) ? parseBaseline(readFileSync(BASELINE_PATH, 'utf8')) : [];
+}
+
+/** The baseline as of `ref` (a turn's snapshot tree, or a branch); [] when absent. */
+export function loadBaselineAt(ref: string): string[] {
+  try {
+    return parseBaseline(git(['show', `${assertRef(ref)}:${BASELINE_PATH}`], { quiet: true }));
+  } catch {
+    return [];
+  }
+}
+
+// A corrupt baseline counts as empty: it can only surface more findings, never hide one.
+function parseBaseline(text: string): string[] {
+  try {
+    const parsed: unknown = JSON.parse(text);
+    return Array.isArray(parsed) ? parsed.filter((x): x is string => typeof x === 'string') : [];
+  } catch {
+    return [];
+  }
+}
+
+/** True when `path` exists in `ref`'s tree. */
+export function existsAt(ref: string, path: string): boolean {
+  try {
+    git(['cat-file', '-e', `${assertRef(ref)}:${path}`], { quiet: true });
+    return true;
+  } catch {
+    return false;
+  }
+}
+
+/** The rules in force when the turn started, so an edit to the rubric mid-turn can't
+ * weaken its own check. Falls back to the working tree when the base has none. */
+export function turnRubric(base: string): Rubric | null {
+  return loadRubricAt(base) ?? loadRubric();
 }
 
 export function writeJson(path: string, value: unknown): void {

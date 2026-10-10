@@ -21,8 +21,13 @@ fraction of a cent, which is what makes checking every turn viable.
 
 Judging every file as if freshly written buries you in findings on a real repo. Leash
 borrows Foundry's accepted-debt baseline: existing violations are baselined once, and
-Leash only ever flags what a turn **newly** introduces. The baseline is one-way, it can
-only shrink. That is what makes it adoptable on an existing codebase from day one.
+Leash only ever flags what a turn **newly** introduces. Growing the baseline is a
+reviewable change: `leash guard` fails a PR that adds entries, and the hooks judge each
+turn against the rubric and baseline as they were when the turn started, so an agent
+can't edit its way out of a check mid-turn. That is what makes it adoptable on an
+existing codebase from day one. The baseline is per rule and file: once `r::src/big.ts`
+is accepted, a later break of `r` in that file isn't flagged until the entry is fixed
+away. `audit` only rewrites entries for the files it judged; the rest stay.
 
 Turn-check is the default (once per turn, on the whole diff, where the un-lintable
 questions actually have an answer). A per-edit mode exists but is off by default: at
@@ -138,7 +143,9 @@ leash uninstall         # removes them again
 `init` also drops a `/leash-rubric` slash command into `.claude/commands/` (personal, or
 in-repo with `--project`) that drives the authoring procedure in
 [docs/COMPILE.md](docs/COMPILE.md); `uninstall` removes it. It merges into whatever is
-already there and never duplicates; re-running it upgrades an older install. Under the
+already there and never duplicates; re-running it upgrades an older install. A settings
+file that isn't valid JSON is left untouched and `init` exits 1 with the parse error.
+`uninstall` removes only Leash's own hooks, even from a group it shares with others. Under the
 hood it adds the three hooks to `.claude/settings.json`:
 
 ```json
@@ -322,7 +329,9 @@ have no Foundry adapter, so init always installs Leash's hooks there.
 ## Use in CI
 
 `leash guard` needs no key and no Jev call: it compares the rubric against the base
-branch and fails if a rule was removed, a threshold raised, or a rule newly deferred.
+branch and fails if the rubric was deleted or broken, a rule was removed, reworded,
+narrowed in scope, moved to the opt-in edit phase or newly deferred, a threshold was
+raised, or the baseline gained entries.
 That makes "weaken the rules to get a green turn" a visible, reviewable change:
 
 ```yaml
