@@ -4,21 +4,16 @@
 // exactly what a turn changed, including brand-new files (which `git stash create` and
 // plain `git diff` both miss). The snapshot ref lives in the git dir, not the working tree.
 
-<<<<<<< HEAD
-import { copyFileSync, existsSync, mkdtempSync, readFileSync, rmSync, writeFileSync } from 'node:fs';
-=======
 import {
   copyFileSync,
   existsSync,
   mkdtempSync,
-  readdirSync,
   readFileSync,
   rmSync,
   statSync,
   utimesSync,
   writeFileSync,
 } from 'node:fs';
->>>>>>> 64b4ec7 (fix: keep the index mtime on the scratch copy so same-second edits aren't missed)
 import { tmpdir } from 'node:os';
 import { join } from 'node:path';
 import { assertRef, git } from './git.js';
