@@ -27,3 +27,9 @@ export function sampleSize(): number {
   const n = Number(raw);
   return Number.isFinite(n) && n > 0 ? Math.floor(n) : 20;
 }
+
+export function flagValue(flag: string): string | undefined {
+  const args = process.argv.slice(3);
+  const at = args.indexOf(flag);
+  return at >= 0 ? args[at + 1] : undefined;
+}

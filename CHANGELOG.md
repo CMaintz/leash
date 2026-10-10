@@ -4,6 +4,10 @@ All notable changes to this project are documented here. Format: [Keep a Changel
 
 ## [Unreleased]
 
+### Added
+
+- **`leash calibrate --from thresholds.json`**: writes each rule's `repairAt`/`noteAt` from a jev-eval measurement (its `yesAt` section, jev-eval 1.2.0). The strictest precision target's threshold becomes `repairAt`, the loosest `noteAt`; a single target sets `repairAt` only. Refuses non-version-1 files, warns on a model mismatch and on a question reworded since it was measured. `--dry-run` prints without writing. New exports: `parseYesAtThresholds`, `planBands`, `applyBands`, `wireQuestion`.
+
 ## [0.16.0] - 2026-10-10
 
 ### Added

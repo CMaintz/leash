@@ -21,6 +21,7 @@ const HELP = `leash <command> [arg]
   judge:   check [baseRef] | audit [baseRef] | edit-check <file>
   hooks:   snapshot | hook | session | edit-hook   (run by the host agent)
   check flags: --turn (diff since the turn snapshot), --json (machine-readable result)
+  calibrate flags: --sample N; --from <thresholds.json> [--dry-run] (bands from jev-eval, no Jev call)
   init/uninstall flags: --project (this repo, default global); --codex or --opencode
     (default Claude Code); --edit-phase (also wire the per-edit check);
     --standalone (install hooks even where Foundry drives Leash)`;
