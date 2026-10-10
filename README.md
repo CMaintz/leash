@@ -299,6 +299,21 @@ demand, and every Jev-backed command exits 0. Only `compile` (malformed rubric) 
 `guard` (loosened rubric) can fail, and both are deterministic, so they are safe in CI.
 It is a coach on the proposer side, never an oracle.
 
+That boundary is tested, not just promised. Leash's own `test/boundary.test.ts` fails if a
+workflow, mise task or npm script here runs a Jev-backed command (`check`, `audit`,
+`hook`, `calibrate`, `bench`...), and Foundry's `boundary.test.mjs` does the same for
+every Foundry repo. The one way around it is yours to avoid: `check --json` prints a
+`decision` field, and a script that turns that into a failing exit puts Jev in the gate.
+
+**One set of hooks, not two.** On a Foundry machine, cmaintz-skills' `hooks/leash.sh`
+runs Leash's turn hooks from Foundry's own hook layer, switched on per repo with
+`LEASH_ENABLED=1` in mise `[env]`. `leash init` for Claude Code looks for that script in
+your global and project `settings.json`. If it finds it, init installs no turn hooks and
+removes any it added before, so a turn is never checked twice. The `/leash-rubric`
+command and `--edit-phase` still install, since the adapter doesn't cover per-edit
+checks. `leash init --standalone` installs Leash's own hooks anyway. Codex and OpenCode
+have no Foundry adapter, so init always installs Leash's hooks there.
+
 ## Use in CI
 
 `leash guard` needs no key and no Jev call: it compares the rubric against the base
