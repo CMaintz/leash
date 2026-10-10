@@ -34,6 +34,7 @@ All notable changes to this project are documented here. Format: [Keep a Changel
 ### Fixed
 
 - `check --json` printed nothing but a stderr line for an invalid rubric; it now always prints the JSON result (`ran: false`).
+- A tracked edit of the same size made within a second of the last index write could be missed by the turn snapshot: the scratch index copy got a fresh mtime, which defeats git's racy-entry check. The copy now keeps the real index's mtime.
 
 ### Tests
 
