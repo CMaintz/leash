@@ -114,7 +114,9 @@ optional `scope`, `source` (the instruction-file line it came from), and `handle
 ## Time budget and the miss log
 
 A hook must never stall the agent. Each Jev request times out after 20s
-(`LEASH_TIMEOUT_MS`), and a whole turn's check gets 60s (`LEASH_DEADLINE_MS`). When
+(`LEASH_TIMEOUT_MS`), and a whole turn's check gets 60s (`LEASH_DEADLINE_MS`), counted
+from the moment the hook starts, so reading the host's payload (given up after 5s if
+stdin stays open) and building the snapshot come out of the same budget. When
 the time is up, unjudged files are skipped, any request still waiting is cancelled,
 and the turn goes through. `leash init` also gives each hook a host timeout (90s for
 the Stop and per-edit hooks, 30s for the snapshot) as a backstop.

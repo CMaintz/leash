@@ -4,9 +4,23 @@ All notable changes to this project are documented here. Format: [Keep a Changel
 
 ## [Unreleased]
 
+## [0.15.0] - 2026-10-10
+
 ### Changed
 
 - **Jev client from `@cmaintz/jev-core`.** `src/provider.ts` is now a thin layer over the published client instead of its own copy, keeping Leash's exports, the 20 s default timeout, `LEASH_TIMEOUT_MS` and the turn-deadline `signal`. Errors are now `JevError` subclasses (same messages), and malformed answers are dropped as "no answer" instead of passed through. First runtime dependency; requires Node 20.3 or newer.
+- One judging pipeline: the per-edit check and `calibrate` now go through `checkTurn` (new `phase` option), so they get the same ignore list, binary skip, chunking and deadline as the turn check. A failed call in `calibrate` skips that file instead of aborting the run.
+- The CLI is split by job: `cli-turn.ts` (check, audit, hooks), `cli-rubric.ts` (compile, report, guard, session), `cli-setup.ts` (login, init, uninstall); `cli.ts` only dispatches. `leash help` lists every command.
+- The turn deadline counts from process start, and reading the hook payload gives up after 5s, so a stdin that never closes can't eat the budget.
+
+### Fixed
+
+- `check --json` printed nothing but a stderr line for an invalid rubric; it now always prints the JSON result (`ran: false`).
+- A tracked edit of the same size made within a second of the last index write could be missed by the turn snapshot: the scratch index copy got a fresh mtime, which defeats git's racy-entry check. The copy now keeps the real index's mtime.
+
+### Tests
+
+- Spawn-level CLI tests run the built binary in a throwaway repo against a mock Jev server: the hook's block output and exit 0, fail-open with no key or a dead server, subdirectory sessions, `guard` on a deleted rubric, `init` on a broken settings file, and `check --json` on a broken rubric.
 
 ## [0.14.2] - 2026-10-10
 

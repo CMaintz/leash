@@ -4,7 +4,16 @@
 // exactly what a turn changed, including brand-new files (which `git stash create` and
 // plain `git diff` both miss). The snapshot ref lives in the git dir, not the working tree.
 
-import { copyFileSync, existsSync, mkdtempSync, readFileSync, rmSync, writeFileSync } from 'node:fs';
+import {
+  copyFileSync,
+  existsSync,
+  mkdtempSync,
+  readFileSync,
+  rmSync,
+  statSync,
+  utimesSync,
+  writeFileSync,
+} from 'node:fs';
 import { tmpdir } from 'node:os';
 import { join } from 'node:path';
 import { assertRef, git } from './git.js';
@@ -32,10 +41,19 @@ export function worktreeTree(): string {
 
 function treeWithIndex(index: string): string {
   const real = join(gitDir(), 'index');
-  if (existsSync(real)) copyFileSync(real, index);
+  if (existsSync(real)) copyIndex(real, index);
   const env = { ...process.env, GIT_INDEX_FILE: index };
   git(['add', '-A'], { env, quiet: true });
   return git(['write-tree'], { env }).trim();
+}
+
+// Keep the real index's mtime on the copy. Git trusts an entry whose stat matches unless the
+// file is as new as the index itself ("racy git"); a copy stamped "now" hides a same-size
+// edit made within a second of the last index write, so that edit would look unchanged.
+function copyIndex(real: string, copy: string): void {
+  copyFileSync(real, copy);
+  const { atime, mtime } = statSync(real);
+  utimesSync(copy, atime, mtime);
 }
 
 /** Record the turn's starting point (UserPromptSubmit); a new turn starts a clean block record. */

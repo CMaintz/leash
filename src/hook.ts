@@ -85,16 +85,34 @@ export function repoRelative(filePath: string, root: string): string | null {
 }
 
 /** Read all of stdin (the hook payload) and parse it, tolerating an empty pipe. */
-export async function readHookInput(stream: NodeJS.ReadableStream = process.stdin): Promise<StopHookInput> {
-  const chunks: Buffer[] = [];
-  for await (const chunk of stream) chunks.push(Buffer.from(chunk));
-  const text = Buffer.concat(chunks).toString('utf8').trim();
+export async function readHookInput(
+  stream: NodeJS.ReadableStream = process.stdin,
+  timeoutMs = STDIN_TIMEOUT_MS,
+): Promise<StopHookInput> {
+  const text = await readWithin(stream, timeoutMs);
   if (!text) return {};
   try {
     return JSON.parse(text) as StopHookInput;
   } catch {
     return {};
   }
+}
+
+/** Hosts write the payload and close stdin at once; a stream left open must not eat the
+ * turn's deadline, so reading gives up after this and carries on with what arrived. */
+const STDIN_TIMEOUT_MS = 5_000;
+
+async function readWithin(stream: NodeJS.ReadableStream, timeoutMs: number): Promise<string> {
+  const chunks: Buffer[] = [];
+  const read = (async (): Promise<void> => {
+    for await (const chunk of stream) chunks.push(Buffer.from(chunk));
+  })();
+  let timer: NodeJS.Timeout | undefined;
+  const timeout = new Promise<void>((resolve) => (timer = setTimeout(resolve, timeoutMs)));
+  await Promise.race([read, timeout]);
+  clearTimeout(timer);
+  (stream as { destroy?: () => void }).destroy?.(); // an open stdin would keep the process alive
+  return Buffer.concat(chunks).toString('utf8').trim();
 }
 
 function repairsOf(findings: Finding[]): Finding[] {
