@@ -25,9 +25,12 @@ Leash only ever flags what a turn **newly** introduces. Growing the baseline is 
 reviewable change: `leash guard` fails a PR that adds entries, and the hooks judge each
 turn against the rubric and baseline as they were when the turn started, so an agent
 can't edit its way out of a check mid-turn. That is what makes it adoptable on an
-existing codebase from day one. The baseline is per rule and file: once `r::src/big.ts`
-is accepted, a later break of `r` in that file isn't flagged until the entry is fixed
-away. `audit` only rewrites entries for the files it judged; the rest stay.
+existing codebase from day one. The baseline is per rule and file, because Jev can say
+*whether* a rule is broken but not *how many times*: once `r::src/big.ts` is accepted, a
+later break of `r` in that file doesn't block the agent. `leash check` still lists it as
+`[baselined]`, so a person sees it. `audit` only rewrites entries for the files it judged;
+the rest stay. `leash audit --all [paths...]` judges whole files as if just written, which
+is how you baseline the existing debt in files no diff touches.
 
 Turn-check is the default (once per turn, on the whole diff, where the un-lintable
 questions actually have an answer). A per-edit mode exists but is off by default: at
@@ -46,7 +49,8 @@ leash login               # prompts (input hidden); or pipe it: Get-Clipboard | 
 ```
 
 That stores `JEV_API_KEY` in `~/.leash/.env`, readable only by you (mode 0600 on
-macOS/Linux; on Windows the file sits in your user profile and inherits its ACL). Leash
+macOS/Linux; on Windows an ACL granting only your user). Git Bash's terminal isn't a TTY
+to Node, so there `leash login` can't hide input; pipe the key in instead. Leash
 looks for its settings in this order: the process env, then the repo's `.env.local`,
 then its `.env`, then `~/.leash/.env`. From those files it reads only its own keys
 (`JEV_*`, `TYPESAFE_AI_*`, `LEASH_*`), never your app's other secrets.
@@ -59,8 +63,10 @@ No key means Leash no-ops and lets the edit through, always.
 
 ```
 leash report              # list the rules in .leash/rubric.json
-leash compile             # validate the rubric, show the active vs deferred split
-leash audit               # accept the current diff's findings into the baseline
+leash compile             # validate the rubric, show the active vs deferred split, and
+                          #   warn on a scope glob that matches no file in the repo
+leash audit [baseRef]     # accept the current diff's findings into the baseline
+leash audit --all [paths] # accept findings in whole files (existing debt), all or some
 leash check [baseRef]     # print what this turn newly broke (default base: HEAD)
                           #   --turn: since the turn snapshot; --json: machine-readable
 leash guard [baseRef]     # fail if the rubric was loosened vs baseRef (for CI)
@@ -180,7 +186,9 @@ agent's repair gets verified, and when a repair that breaks something else gets 
 But Leash blocks **at most once per finding per turn**: a rule it already flagged in this
 turn never blocks again (so a finding Jev keeps wrongly reporting cannot loop), and only
 genuinely new breaks can. The record lives in the git dir and resets on the next prompt.
-(Claude Code's own cap of 8 consecutive continuations still applies on top.)
+(Claude Code's own cap of 8 consecutive continuations still applies on top.) The snapshot
+and block record are kept per agent session (the hooks' `session_id`), so two sessions in
+one checkout never reset each other's turn.
 
 One side effect to know: building the snapshot hashes untracked, non-ignored files into
 `.git/objects` (the same thing `git add` would do; nothing is committed, and `git gc`
@@ -214,8 +222,8 @@ That adds:
 }
 ```
 
-`leash edit-hook` reads the edited path from the hook payload (`tool_input.file_path`),
-checks only that file's diff against edit-phase rules, subtracts the ratchet baseline, and
+`leash edit-hook` reads the edited path from the hook payload (`tool_input.file_path`; on
+Codex, every file named in the `apply_patch` text), checks only that file's diff against edit-phase rules, subtracts the ratchet baseline, and
 on a repair-band break returns it as `additionalContext` - advisory text Claude sees and
 weighs, never a block. It stays silent without a key, without edit-phase rules, or for files
 outside the repo. To check one file by hand, use `leash edit-check <file>`.
@@ -239,8 +247,11 @@ project-local `.codex/` must be trusted first. The same once-per-finding rule as
 Claude Code applies, so continuations are re-checked but nothing can loop.
 The contract is checked against Codex's own generated schemas (`stop.command.input` /
 `stop.command.output`): the `Stop` input carries `cwd` + `stop_hook_active`, and a
-`{"decision":"block","reason":...}` reply forces continuation, same as Claude Code. No
-key or no rubric still means silent fail-open.
+`{"decision":"block","reason":...}` reply forces continuation, same as Claude Code. When
+Codex re-submits that reason as a prompt, Leash treats it as the same turn and keeps the
+snapshot. `--edit-phase` works on Codex too: its `Edit|Write` matcher catches `apply_patch`,
+and Leash reads the edited files out of the patch. No key or no rubric still means silent
+fail-open.
 
 ## OpenCode (plugin)
 

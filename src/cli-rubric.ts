@@ -14,7 +14,8 @@ import {
   tryLoadRubric,
   writeJson,
 } from './cli-store.js';
-import { summarize, type CompileSummary } from './compile.js';
+import { deadScopes, summarize, type CompileSummary } from './compile.js';
+import { git } from './git.js';
 import { baselineGrowth, rubricDrift } from './guard.js';
 import { readHookInput } from './hook.js';
 import { parseRubric, type Rubric } from './schema.js';
@@ -45,7 +46,16 @@ export function compile(): void {
   const rubric = parseOrReport(readFileSync(RUBRIC_PATH, 'utf8'));
   if (!rubric) return;
   printSummary(summarize(rubric));
+  printDeadScopes(rubric);
   stampRubricSources(rubric);
+}
+
+// Globs are matched against repo-relative paths, so `*.ts` means root-level files only.
+function printDeadScopes(rubric: Rubric): void {
+  const files = git(['ls-files', '--cached', '--others', '--exclude-standard']).split('\n').filter(Boolean);
+  for (const { id, glob } of deadScopes(rubric, files)) {
+    console.log(`  warning: ${id} scope "${glob}" matches no file in the repo (use **/ for any depth)`);
+  }
 }
 
 function parseOrReport(text: string): Rubric | null {

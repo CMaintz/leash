@@ -10,6 +10,10 @@ export interface GitOptions {
   env?: NodeJS.ProcessEnv;
   /** Drop git's stderr (for probes whose failure is an expected answer). */
   quiet?: boolean;
+  /** Kill git after this long, so a huge tree can't outlive the host's hook timeout. */
+  timeoutMs?: number;
+  /** Text for git's stdin (otherwise stdin is closed). */
+  input?: string;
 }
 
 /** Run `git <args>` and return stdout. Throws on a non-zero exit. */
@@ -18,7 +22,9 @@ export function git(args: readonly string[], options: GitOptions = {}): string {
     encoding: 'utf8',
     maxBuffer: MAX_BUFFER,
     env: options.env ?? process.env,
-    stdio: ['ignore', 'pipe', options.quiet ? 'ignore' : 'pipe'],
+    stdio: [options.input === undefined ? 'ignore' : 'pipe', 'pipe', options.quiet ? 'ignore' : 'pipe'],
+    ...(options.input === undefined ? {} : { input: options.input }),
+    ...(options.timeoutMs ? { timeout: options.timeoutMs, killSignal: 'SIGKILL' as const } : {}),
   });
 }
 

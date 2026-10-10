@@ -141,3 +141,31 @@ describe('check --json', () => {
     expect(JSON.parse(run.stdout)).toMatchObject({ version: 1, ran: false });
   });
 });
+
+describe('Codex and multi-session flows', () => {
+  const payload = (fields: object): string => JSON.stringify({ cwd: repo, ...fields });
+
+  it("keeps the turn when Codex re-submits Leash's repair request as a prompt", async () => {
+    await leash(['snapshot'], {}, payload({ session_id: 's1', prompt: 'add b' }));
+    writeFileSync(join(repo, 'src', 'b.ts'), 'b\n');
+    const first = await leash(['hook'], withJev(), payload({ session_id: 's1' }));
+    const reason = (JSON.parse(first.stdout) as { reason: string }).reason;
+    const marker = join(git('rev-parse', '--absolute-git-dir').trim(), 'leash-turn-base-s1');
+    const before = readFileSync(marker, 'utf8');
+    await leash(['snapshot'], {}, payload({ session_id: 's1', prompt: reason }));
+    expect(readFileSync(marker, 'utf8')).toBe(before); // the repair continues the turn
+    await leash(['snapshot'], {}, payload({ session_id: 's2', prompt: 'other session' }));
+    expect(readFileSync(marker, 'utf8')).toBe(before); // another session has its own
+  });
+
+  it('judges the files in a Codex apply_patch on the per-edit hook', async () => {
+    writeFileSync(
+      join(repo, '.leash', 'rubric.json'),
+      JSON.stringify({ version: 1, rules: [{ id: 'e1', question: 'Broken?', phase: 'edit', scope: ['src/**'] }] }),
+    );
+    writeFileSync(join(repo, 'src', 'a.ts'), 'changed\n');
+    const command = '*** Begin Patch\n*** Update File: src/a.ts\n@@\n-a\n+changed\n*** End Patch';
+    const run = await leash(['edit-hook'], withJev(), payload({ tool_name: 'apply_patch', tool_input: { command } }));
+    expect(JSON.parse(run.stdout).hookSpecificOutput.additionalContext).toContain('src/a.ts');
+  });
+});

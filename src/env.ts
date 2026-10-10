@@ -5,6 +5,7 @@
 // requests go: the endpoint, provider and account come only from the env or ~/.leash/.env.
 // Otherwise a cloned repo could send the user's key and diffs to a server of its choosing.
 
+import { execFileSync } from 'node:child_process';
 import { chmodSync, existsSync, mkdirSync, readFileSync, writeFileSync } from 'node:fs';
 import { homedir } from 'node:os';
 import { dirname, join } from 'node:path';
@@ -72,11 +73,24 @@ export function upsertEnvLine(text: string, key: string, value: string): string 
   return `${lines.join('\n')}\n`;
 }
 
-/** Store the API key in ~/.leash/.env, owner-only (0600; Windows ignores the mode). */
+/** Store the API key in ~/.leash/.env, owner-only (0600, or an owner-only ACL on Windows). */
 export function saveApiKey(apiKey: string, path = userEnvPath()): string {
   mkdirSync(dirname(path), { recursive: true, mode: 0o700 });
   const text = existsSync(path) ? readFileSync(path, 'utf8') : '';
   writeFileSync(path, upsertEnvLine(text, 'JEV_API_KEY', apiKey), { mode: 0o600 });
   chmodSync(path, 0o600); // an existing file keeps its old mode on write
+  if (process.platform === 'win32') ownerOnlyAcl(path);
   return path;
+}
+
+// Windows ignores the mode bits, so restrict the ACL to the current user instead (drop the
+// inherited entries, grant only this user). Best effort: the profile dir is private anyway.
+function ownerOnlyAcl(path: string): void {
+  const user = process.env.USERNAME;
+  if (!user) return;
+  try {
+    execFileSync('icacls', [path, '/inheritance:r', '/grant:r', `${user}:F`], { stdio: 'ignore' });
+  } catch {
+    // icacls missing or refused: the file still sits in the user's own profile
+  }
 }

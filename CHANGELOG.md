@@ -4,6 +4,24 @@ All notable changes to this project are documented here. Format: [Keep a Changel
 
 ## [Unreleased]
 
+## [0.16.0] - 2026-10-10
+
+### Added
+
+- **`leash audit --all [paths...]`** judges whole files as if just written, so existing debt in files no diff touches can be baselined (the spec's `audit <paths>`).
+- `leash check` lists findings the baseline hides as `[baselined]`, so a fresh break of an accepted rule in an accepted file is still visible to a person.
+- `leash compile` warns when a scope glob matches no file in the repo (often a root-only `*.ts` meant as `**/*.ts`). New export: `deadScopes`.
+- **Codex per-edit checks.** Codex's `Edit|Write` matcher catches `apply_patch`, but its payload has the patch text instead of a file path, so the edit hook skipped every Codex edit. It now judges each file the patch adds, updates or moves to. New export: `editedFiles`.
+
+### Fixed
+
+- Turn state (snapshot and block record) is kept per session (`session_id`), so two agent sessions in one checkout no longer reset each other's turn. Stale per-session files are pruned after a week.
+- When Codex re-submits Leash's block reason as a prompt, the snapshot is kept, so the repair is judged against the turn's real start.
+- Hooks move to the repo of the payload's `cwd`, and Codex patch paths resolve against it.
+- Building the snapshot tree is capped at 25s, so a huge untracked tree fails with a logged miss before the host's 30s kill.
+- Running a hook by hand at a terminal no longer waits for stdin.
+- On Windows, `leash login` restricts `~/.leash/.env` to the current user with `icacls`; on Git Bash it explains that input can't be hidden there.
+
 ## [0.15.0] - 2026-10-10
 
 ### Changed
