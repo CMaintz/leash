@@ -18,6 +18,7 @@ export type { FileDiff } from './diff.js';
 export {
   bandFor,
   baselineFrom,
+  rebaseline,
   DEFAULT_IGNORE,
   fingerprint,
   findingsForFile,

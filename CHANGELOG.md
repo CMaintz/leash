@@ -4,6 +4,18 @@ All notable changes to this project are documented here. Format: [Keep a Changel
 
 ## [Unreleased]
 
+## [0.14.2] - 2026-10-10
+
+### Fixed
+
+- `leash guard` passed when the rubric was deleted or invalid, and missed rules narrowed in scope, moved to the edit phase, or reworded. All now fail, and so does a baseline that gained entries (`baselineGrowth`).
+- The Stop hook and `check --turn` use the rubric and baseline from the turn's snapshot, so an agent editing either mid-turn can't weaken its own check. A corrupt baseline counts as empty.
+- `audit` overwrote the whole baseline: on a clean tree it emptied it, and files whose call failed lost their entries. It now refreshes only the files it judged (`rebaseline`).
+- `init` replaced a settings file it couldn't parse with Leash's hooks alone. It now stops and changes nothing. `uninstall` crashed on prompt-type hooks and removed whole hook groups; it now removes only Leash's hooks.
+- Sessions started in a subdirectory found no rubric and skipped every check silently. Leash now runs from the repo root.
+- Scope globs support `{a,b}` and `?`; `src/**/*.{ts,tsx}` used to match nothing.
+- `init`, `uninstall`, `login`, `compile` and `guard` exit 1 on an error; hook and check paths still always exit 0.
+
 ## [0.14.1] - 2026-10-10
 
 ### Security

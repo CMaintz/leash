@@ -1,9 +1,13 @@
+import { mkdtempSync, rmSync, writeFileSync } from 'node:fs';
+import { tmpdir } from 'node:os';
+import { join } from 'node:path';
 import { describe, expect, it } from 'vitest';
 import {
   addEditHook,
   addLeashHooks,
   hasFoundryAdapter,
   hostConfigPath,
+  loadSettings,
   removeLeashHooks,
   type ClaudeSettings,
 } from '../src/install.js';
@@ -113,5 +117,32 @@ describe('Foundry library mode', () => {
     const out = addEditHook({});
     expect(Object.keys(out.hooks ?? {})).toEqual(['PostToolUse']);
     expect(out.hooks?.PostToolUse?.[0]?.hooks?.[0]?.command).toBe('leash edit-hook');
+  });
+});
+
+describe('removeLeashHooks safety', () => {
+  it("keeps another tool's hook that shares a group, and survives prompt hooks", () => {
+    const settings = {
+      hooks: {
+        Stop: [
+          { hooks: [{ type: 'command', command: 'leash hook' }, { type: 'command', command: 'my-notify.sh' }] },
+          { hooks: [{ type: 'prompt', prompt: 'Is the work done?' } as never] },
+        ],
+      },
+    } as ClaudeSettings;
+    const stop = removeLeashHooks(settings).hooks?.Stop;
+    expect(stop).toHaveLength(2);
+    expect(stop?.[0]?.hooks).toEqual([{ type: 'command', command: 'my-notify.sh' }]);
+  });
+});
+
+describe('loadSettings', () => {
+  it('refuses a file it cannot parse instead of treating it as empty', () => {
+    const dir = mkdtempSync(join(tmpdir(), 'leash-settings-'));
+    const path = join(dir, 'settings.json');
+    writeFileSync(path, '{ "model": "x", }');
+    expect(() => loadSettings(path)).toThrow(/not valid JSON/);
+    expect(loadSettings(join(dir, 'missing.json'))).toEqual({});
+    rmSync(dir, { recursive: true, force: true });
   });
 });

@@ -72,6 +72,13 @@ export function baselineFrom(findings: Finding[]): string[] {
   return [...new Set(findings.map(fingerprint))].sort();
 }
 
+/** Refresh `baseline` for the files an audit judged: their entries become `findings`;
+ * every other file's entries (outside the diff, or skipped) are kept as they were. */
+export function rebaseline(baseline: readonly string[], judged: ReadonlySet<string>, findings: Finding[]): string[] {
+  const kept = baseline.filter((entry) => !judged.has(entry.slice(entry.indexOf('::') + 2)));
+  return [...new Set([...kept, ...findings.map(fingerprint)])].sort();
+}
+
 /** Machine-written files no project rule is about; judging them only costs calls. */
 export const DEFAULT_IGNORE: readonly string[] = [
   '**/package-lock.json',
@@ -102,15 +109,26 @@ function inScope(scope: string[], file: string): boolean {
   return scope.length === 0 || scope.some((glob) => matchGlob(glob, file));
 }
 
+// `**/` = any directories, `**` = anything, `*` = within one segment, `?` = one character,
+// `{a,b}` = either (not nested). Everything else is literal.
+const GLOB_TOKEN = /\*\*\/|\*\*|\*|\?|\{[^{}]*\}|[^*?{]+|\{/g;
+
 function matchGlob(glob: string, file: string): boolean {
-  const pattern = glob
-    .replace(/[.+^${}()|[\]\\]/g, '\\$&')
-    .replace(/\*\*\//g, '@@DIRS@@')
-    .replace(/\*\*/g, '@@ANY@@')
-    .replace(/\*/g, '[^/]*')
-    .replace(/@@DIRS@@/g, '(?:.*/)?')
-    .replace(/@@ANY@@/g, '.*');
+  const pattern = (glob.match(GLOB_TOKEN) ?? []).map(globToken).join('');
   return new RegExp(`^${pattern}$`).test(file);
+}
+
+function globToken(token: string): string {
+  if (token === '**/') return '(?:.*/)?';
+  if (token === '**') return '.*';
+  if (token === '*') return '[^/]*';
+  if (token === '?') return '[^/]';
+  if (token.length > 1 && token.startsWith('{')) return `(?:${token.slice(1, -1).split(',').map(literal).join('|')})`;
+  return literal(token);
+}
+
+function literal(text: string): string {
+  return text.replace(/[.+^${}()|[\]\\*?]/g, '\\$&');
 }
 
 function noulOf(answer: Answer | undefined): number | null {
