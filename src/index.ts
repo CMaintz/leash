@@ -47,6 +47,8 @@ export {
   staleSources,
 } from './sources.js';
 export type { SourceStamp } from './sources.js';
+export { applyBands, parseYesAtThresholds, planBands, wireQuestion } from './thresholds.js';
+export type { BandChange, BandPlan, YesAtEntry, YesAtThresholds } from './thresholds.js';
 export type { Baseline, Band, Finding, Phase, Rubric, Rule } from './schema.js';
 export { DEFAULT_TIMEOUT_MS, positiveMs, postJson, providerFromEnv, TypeSafeProvider } from './provider.js';
 export {

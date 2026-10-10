@@ -86,6 +86,7 @@ async function main(): Promise<void> {
       console.log(
         'leash <check|audit|report|compile|guard|calibrate|edit-check|init|uninstall> [arg]\n' +
           '  check flags: --turn (diff since the turn snapshot), --json (machine-readable result)\n' +
+          '  calibrate flags: --sample N; --from <thresholds.json> [--dry-run] (bands from jev-eval, no Jev call)\n' +
           '  init/uninstall flags: --project (this repo, default global); --codex or --opencode (default Claude Code); --edit-phase (also wire the per-edit check); --standalone (install hooks even where Foundry drives Leash)',
       ),
   };

@@ -4,6 +4,10 @@ All notable changes to this project are documented here. Format: [Keep a Changel
 
 ## [Unreleased]
 
+### Added
+
+- **`leash calibrate --from thresholds.json`**: writes each rule's `repairAt`/`noteAt` from a jev-eval measurement (its `yesAt` section, jev-eval 1.2.0). The strictest precision target's threshold becomes `repairAt`, the loosest `noteAt`; a single target sets `repairAt` only. Refuses non-version-1 files, warns on a model mismatch and on a question reworded since it was measured. `--dry-run` prints without writing. New exports: `parseYesAtThresholds`, `planBands`, `applyBands`, `wireQuestion`.
+
 ### Changed
 
 - **Jev client from `@cmaintz/jev-core`.** `src/provider.ts` is now a thin layer over the published client instead of its own copy, keeping Leash's exports, the 20 s default timeout, `LEASH_TIMEOUT_MS` and the turn-deadline `signal`. Errors are now `JevError` subclasses (same messages), and malformed answers are dropped as "no answer" instead of passed through. First runtime dependency; requires Node 20.3 or newer.

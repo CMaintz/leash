@@ -65,6 +65,7 @@ leash check [baseRef]     # print what this turn newly broke (default base: HEAD
                           #   --turn: since the turn snapshot; --json: machine-readable
 leash guard [baseRef]     # fail if the rubric was loosened vs baseRef (for CI)
 leash calibrate [N]       # score rules against the last N commits (default 20); flag dead ones
+leash calibrate --from thresholds.json  # set rule bands from a jev-eval measurement
 leash bench [N]           # latency, size and tokens of replaying the last N commits as turns
 leash edit-check <file>   # opt-in per-edit check of one file (see below)
 leash login               # store your API key in ~/.leash/.env
@@ -80,6 +81,20 @@ repo and machine.
 (`--sample N` or a bare `N`, default 20) and reports how often each actually fires. A rule
 that never fires is flagged as a dead-rule candidate to reword or remove, so the rubric
 stays honest. Advisory and fail-open: no key just prints a skip.
+
+`leash calibrate --from thresholds.json` sets each rule's bands from a
+[jev-eval](https://github.com/CMaintz/jev-eval) measurement instead of by hand. Label some
+diffs per rule (the rule id is the jev-eval question id), run
+`jev-eval thresholds --yes-precision 0.9,0.7`, then point Leash at the result. For each rule
+in the file's `yesAt` section, `repairAt` becomes the threshold measured for the strictest
+precision target and `noteAt` the one for the loosest. When jev-eval reached only one target,
+only `repairAt` is set (`noteAt` is lowered to it if it was higher, so the note band never
+inverts). Rules with no entry are left alone and listed. The numbers are written into
+`.leash/rubric.json` (other fields kept as written), so the change is a diff you review and
+`leash guard` checks; nothing reads the thresholds file at run time. `--dry-run` only prints.
+It refuses a file whose `version` is not 1, and warns when the file was measured on a
+different model than `JEV_MODEL` (default `jev-latest`) or when a rule's question changed
+since it was measured. No Jev call and no key needed.
 
 You do not hand-write the rubric from scratch: your coding agent compiles it from your
 `CLAUDE.md` / `AGENTS.md` (no second model involved - see [docs/COMPILE.md](docs/COMPILE.md)),
