@@ -4,6 +4,10 @@ All notable changes to this project are documented here. Format: [Keep a Changel
 
 ## [Unreleased]
 
+### Changed
+
+- **Jev client from `@cmaintz/jev-core`.** `src/provider.ts` is now a thin layer over the published client instead of its own copy, keeping Leash's exports, the 20 s default timeout, `LEASH_TIMEOUT_MS` and the turn-deadline `signal`. Errors are now `JevError` subclasses (same messages), and malformed answers are dropped as "no answer" instead of passed through. First runtime dependency; requires Node 20.3 or newer.
+
 ## [0.14.2] - 2026-10-10
 
 ### Fixed
