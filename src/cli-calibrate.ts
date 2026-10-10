@@ -1,9 +1,9 @@
-import { execSync } from 'node:child_process';
 import { calibrationReport, tallyFires, type RuleCalibration } from './calibrate.js';
 import { sampleSize } from './cli-args.js';
 import { skip } from './cli-output.js';
 import { cliProvider, loadRubric } from './cli-store.js';
 import { parseDiff, type FileDiff } from './diff.js';
+import { git } from './git.js';
 
 export async function calibrate(): Promise<void> {
   const rubric = loadRubric();
@@ -15,11 +15,9 @@ export async function calibrate(): Promise<void> {
 }
 
 export function commitDiffs(sample: number): FileDiff[][] {
-  const log = execSync(`git log -n ${sample} --format=%H`, { encoding: 'utf8' });
+  const log = git(['log', '-n', String(sample), '--format=%H']);
   const shas = log.trim().split('\n').filter(Boolean);
-  return shas.map((sha) =>
-    parseDiff(execSync(`git show ${sha} --format=`, { encoding: 'utf8', maxBuffer: 32 * 1024 * 1024 })),
-  );
+  return shas.map((sha) => parseDiff(git(['show', sha, '--format='])));
 }
 
 function printCalibration(report: RuleCalibration[], sample: number): void {

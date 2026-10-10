@@ -80,6 +80,17 @@ export const DEFAULT_IGNORE: readonly string[] = [
   '**/*.lock',
   '**/*.min.js',
   '**/*.map',
+  // Likely secrets: never send these to the API, whatever .gitignore says.
+  '**/.env',
+  '**/.env.*',
+  '**/*.pem',
+  '**/*.key',
+  '**/*.p12',
+  '**/*.pfx',
+  '**/id_rsa*',
+  '**/id_ed25519*',
+  '**/.npmrc',
+  '**/.netrc',
 ];
 
 /** True when `file` matches one of the default ignore globs. */

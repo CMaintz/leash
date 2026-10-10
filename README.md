@@ -45,8 +45,10 @@ macOS/Linux; on Windows the file sits in your user profile and inherits its ACL)
 looks for its settings in this order: the process env, then the repo's `.env.local`,
 then its `.env`, then `~/.leash/.env`. From those files it reads only its own keys
 (`JEV_*`, `TYPESAFE_AI_*`, `LEASH_*`), never your app's other secrets.
-`TYPESAFE_AI_BASE_URL` points it at a self-host, proxy or mock. No key means Leash
-no-ops and lets the edit through, always.
+`TYPESAFE_AI_BASE_URL` points it at a self-host, proxy or mock, but only from the process
+env or `~/.leash/.env`. A repo's files may set the key, `JEV_MODEL` and `LEASH_*` tuning,
+never where requests go, so a cloned repo can't send your key and code to its own server.
+No key means Leash no-ops and lets the edit through, always.
 
 ## Use
 
@@ -174,6 +176,9 @@ genuinely new breaks can. The record lives in the git dir and resets on the next
 One side effect to know: building the snapshot hashes untracked, non-ignored files into
 `.git/objects` (the same thing `git add` would do; nothing is committed, and `git gc`
 prunes the objects later). Keep secrets in `.gitignore`d files, as you would anyway.
+Changed files are sent to the Jev API, except lockfiles, minified bundles, source maps,
+binaries and likely secrets (`.env*`, `*.pem`, `*.key`, SSH keys, `.npmrc`, `.netrc`),
+which are never sent whether or not they are ignored.
 
 ### Opt-in: per-edit checks (off by default)
 

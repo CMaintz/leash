@@ -1,5 +1,5 @@
 import { execSync } from 'node:child_process';
-import { existsSync, mkdtempSync, rmSync, writeFileSync } from 'node:fs';
+import { existsSync, mkdirSync, mkdtempSync, rmSync, writeFileSync } from 'node:fs';
 import { tmpdir } from 'node:os';
 import { join } from 'node:path';
 import { afterEach, beforeEach, describe, expect, it } from 'vitest';
@@ -69,5 +69,25 @@ describe('turn snapshots (real git repo)', () => {
 
   it('falls back to HEAD with no snapshot yet', () => {
     expect(readTurnBase()).toBe('HEAD');
+  });
+
+  it('ignores a committed legacy marker and a marker that is not a tree id', () => {
+    mkdirSync('.leash');
+    writeFileSync(join('.leash', 'turn-base'), 'HEAD & echo PWNED> pwned.txt & rem\n');
+    expect(readTurnBase()).toBe('HEAD');
+    writeFileSync(join(git('rev-parse --absolute-git-dir').trim(), 'leash-turn-base'), 'HEAD; touch x\n');
+    expect(readTurnBase()).toBe('HEAD');
+    writeTurnBase();
+    expect(readTurnBase()).toMatch(/^[0-9a-f]{40}$/);
+    expect(existsSync(join('.leash', 'turn-base'))).toBe(true); // a user's file is never deleted
+  });
+
+  it('treats a file name as data, never as shell', () => {
+    writeTurnBase();
+    // Legal on Windows too; under the old `sh -c` both substitutions ran on POSIX.
+    const name = '$(touch inj) `touch inj2` & x.ts';
+    writeFileSync(name, 'x\n');
+    expect(diffToWorktree(readTurnBase(), name)).toContain('x.ts');
+    expect(existsSync('inj') || existsSync('inj2')).toBe(false);
   });
 });

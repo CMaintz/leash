@@ -33,7 +33,7 @@ export { addEditHook, addLeashHooks, hasFoundryAdapter, hostConfigPath, removeLe
 export { OPENCODE_PLUGIN, opencodePluginPath, removeOpenCodePlugin, writeOpenCodePlugin } from './opencode.js';
 export type { ClaudeSettings, Host, InstallOptions } from './install.js';
 export { chunkPatch, isBinaryPatch, isLeashPath, MAX_PATCH_CHARS, mergeAnswers } from './patch.js';
-export { envFiles, parseEnvFile, resolveEnv, saveApiKey, userEnvPath } from './env.js';
+export { envFiles, parseEnvFile, resolveEnv, saveApiKey, userEnvPath, type EnvFile } from './env.js';
 export { parseRubric } from './schema.js';
 export {
   hashText,

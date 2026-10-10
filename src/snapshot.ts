@@ -4,37 +4,44 @@
 // exactly what a turn changed, including brand-new files (which `git stash create` and
 // plain `git diff` both miss). The snapshot ref lives in the git dir, not the working tree.
 
-import { execSync } from 'node:child_process';
-import { copyFileSync, existsSync, readFileSync, rmSync, writeFileSync } from 'node:fs';
+import { copyFileSync, existsSync, mkdtempSync, readFileSync, rmSync, writeFileSync } from 'node:fs';
+import { tmpdir } from 'node:os';
 import { join } from 'node:path';
+import { assertRef, git } from './git.js';
 
 const BASE_FILE = 'leash-turn-base';
 const BLOCKED_FILE = 'leash-blocked.json';
-const LEGACY_BASE = join('.leash', 'turn-base');
-const MAX_BUFFER = 64 * 1024 * 1024;
+const TREE_ID = /^[0-9a-f]{40}(?:[0-9a-f]{24})?$/;
 
 /** Absolute path of the repo's git dir. */
 export function gitDir(): string {
-  return execSync('git rev-parse --absolute-git-dir', { encoding: 'utf8', stdio: ['pipe', 'pipe', 'ignore'] }).trim();
+  return git(['rev-parse', '--absolute-git-dir'], { quiet: true }).trim();
 }
 
+// The scratch index lives in a fresh temp dir per call: two sessions never share it, and a
+// lock left by a killed run is never seen again, so it cannot wedge later snapshots.
 /** Tree id of the current working tree, untracked files included, real index untouched. */
 export function worktreeTree(): string {
-  const dir = gitDir();
-  const index = join(dir, 'leash-index');
-  const real = join(dir, 'index');
+  const scratch = mkdtempSync(join(tmpdir(), 'leash-index-'));
+  try {
+    return treeWithIndex(join(scratch, 'index'));
+  } finally {
+    rmSync(scratch, { recursive: true, force: true });
+  }
+}
+
+function treeWithIndex(index: string): string {
+  const real = join(gitDir(), 'index');
   if (existsSync(real)) copyFileSync(real, index);
-  else rmSync(index, { force: true });
   const env = { ...process.env, GIT_INDEX_FILE: index };
-  execSync('git add -A', { env, stdio: 'ignore' });
-  return execSync('git write-tree', { env, encoding: 'utf8' }).trim();
+  git(['add', '-A'], { env, quiet: true });
+  return git(['write-tree'], { env }).trim();
 }
 
 /** Record the turn's starting point (UserPromptSubmit); a new turn starts a clean block record. */
 export function writeTurnBase(): void {
   writeFileSync(join(gitDir(), BASE_FILE), `${worktreeTree()}\n`);
   rmSync(join(gitDir(), BLOCKED_FILE), { force: true });
-  rmSync(LEGACY_BASE, { force: true });
 }
 
 /** Fingerprints the Stop hook already blocked on during the turn that started at `base`. */
@@ -54,17 +61,15 @@ export function recordBlocked(base: string, fingerprints: string[]): void {
   writeFileSync(join(gitDir(), BLOCKED_FILE), JSON.stringify({ base, fingerprints }));
 }
 
-/** The turn's starting point: the git-dir marker, the pre-0.7 marker, else HEAD. */
+/** The turn's starting point: the tree id in the git-dir marker, else HEAD. Anything
+ * that isn't a tree id (a hand-edited or corrupt marker) falls back to HEAD. */
 export function readTurnBase(): string {
-  const current = join(gitDir(), BASE_FILE);
-  for (const path of [current, LEGACY_BASE]) {
-    if (existsSync(path)) return readFileSync(path, 'utf8').trim() || 'HEAD';
-  }
-  return 'HEAD';
+  const path = join(gitDir(), BASE_FILE);
+  const base = existsSync(path) ? readFileSync(path, 'utf8').trim() : '';
+  return TREE_ID.test(base) ? base : 'HEAD';
 }
 
 /** Diff from `base` (any tree-ish) to the current working tree, untracked files included. */
 export function diffToWorktree(base: string, file?: string): string {
-  const path = file ? ` -- "${file}"` : '';
-  return execSync(`git diff ${base} ${worktreeTree()}${path}`, { encoding: 'utf8', maxBuffer: MAX_BUFFER });
+  return git(['diff', assertRef(base), worktreeTree(), '--', ...(file ? [file] : [])]);
 }
