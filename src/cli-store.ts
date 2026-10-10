@@ -1,4 +1,4 @@
-import { execSync } from 'node:child_process';
+import { assertRef, git } from './git.js';
 import { existsSync, mkdirSync, readFileSync, writeFileSync } from 'node:fs';
 import { envFiles, resolveEnv } from './env.js';
 import { DEFAULT_DEADLINE_MS } from './check.js';
@@ -24,7 +24,7 @@ export function tryLoadRubric(): Rubric | null {
 
 export function loadRubricAt(ref: string): Rubric | null {
   try {
-    const text = execSync(`git show ${ref}:${RUBRIC_PATH}`, { encoding: 'utf8', stdio: ['pipe', 'pipe', 'ignore'] });
+    const text = git(['show', `${assertRef(ref)}:${RUBRIC_PATH}`], { quiet: true });
     return parseRubric(JSON.parse(text));
   } catch {
     return null;
@@ -45,7 +45,7 @@ export function writeJson(path: string, value: unknown): void {
 /** The repo root, or the cwd outside a git repo. */
 export function projectRoot(): string {
   try {
-    return execSync('git rev-parse --show-toplevel', { encoding: 'utf8', stdio: ['pipe', 'pipe', 'ignore'] }).trim();
+    return git(['rev-parse', '--show-toplevel'], { quiet: true }).trim();
   } catch {
     return process.cwd();
   }

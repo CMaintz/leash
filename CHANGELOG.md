@@ -4,6 +4,21 @@ All notable changes to this project are documented here. Format: [Keep a Changel
 
 ## [Unreleased]
 
+## [0.14.1] - 2026-10-10
+
+### Security
+
+- A repo's `.env`/`.env.local` can no longer set `TYPESAFE_AI_BASE_URL`, `JEV_PROVIDER` or `CLOUDFLARE_ACCOUNT_ID`. A committed `.env` could otherwise send the user's key (from `~/.leash/.env`) and every changed file to any server. Repo files may still set `JEV_API_KEY`, `JEV_MODEL` and `LEASH_*`. `envFiles` now returns `{ path, repo }` entries.
+- Git runs through `execFileSync` with argument arrays everywhere, so a file name, ref or snapshot marker can no longer inject a shell command. Refs starting with `-` are rejected.
+- The pre-0.7 `.leash/turn-base` marker is no longer read (a committed one ran as a shell command) or deleted. The git-dir marker is used only if it holds a tree id.
+- Likely secret files (`.env*`, `*.pem`, `*.key`, `*.p12`, `*.pfx`, SSH keys, `.npmrc`, `.netrc`) are never sent to the API.
+
+### Fixed
+
+- An added line starting with `++ ` was read as the file's path, so a file could rename itself out of judgment. `+++` now counts only in the file header.
+- Files with non-ASCII names were never judged (git octal-quoted their paths). Git runs with `core.quotepath=off`, and quoted paths are decoded.
+- A scratch-index lock left by a killed snapshot disabled every later snapshot and check. The scratch index now lives in a fresh temp dir per call, which also stops two sessions in one checkout racing on it.
+
 ## [0.14.0] - 2026-10-09
 
 ### Added

@@ -28,16 +28,30 @@ describe('resolveEnv', () => {
   afterEach(() => rmSync(dir, { recursive: true, force: true }));
 
   it('prefers the process env, then the earliest file that sets a key', () => {
-    const [local, dotenv, user] = envFiles(dir, dir);
-    writeFileSync(local!, 'JEV_MODEL=local\n');
-    writeFileSync(dotenv!, 'JEV_MODEL=dotenv\nJEV_API_KEY=from-dotenv\n');
-    const env = resolveEnv({ LEASH_TIMEOUT_MS: '1' }, [local!, dotenv!, user!]);
+    const files = envFiles(dir, dir);
+    const [local, dotenv] = files;
+    writeFileSync(local!.path, 'JEV_MODEL=local\n');
+    writeFileSync(dotenv!.path, 'JEV_MODEL=dotenv\nJEV_API_KEY=from-dotenv\n');
+    const env = resolveEnv({ LEASH_TIMEOUT_MS: '1' }, files);
     expect(env).toMatchObject({ JEV_MODEL: 'local', JEV_API_KEY: 'from-dotenv', LEASH_TIMEOUT_MS: '1' });
     expect(resolveEnv({ JEV_API_KEY: 'from-env' }, [dotenv!]).JEV_API_KEY).toBe('from-env');
   });
 
+  it("never lets a repo's files choose the endpoint, provider or account", () => {
+    const files = envFiles(dir, join(dir, 'home'));
+    const [, dotenv, user] = files;
+    writeFileSync(
+      dotenv!.path,
+      'TYPESAFE_AI_BASE_URL=http://attacker\nJEV_PROVIDER=cloudflare\nCLOUDFLARE_ACCOUNT_ID=x\n',
+    );
+    expect(resolveEnv({}, files)).toEqual({});
+    saveApiKey('k', user!.path);
+    writeFileSync(user!.path, 'JEV_API_KEY=k\nTYPESAFE_AI_BASE_URL=http://proxy\n');
+    expect(resolveEnv({}, files)).toEqual({ JEV_API_KEY: 'k', TYPESAFE_AI_BASE_URL: 'http://proxy' });
+  });
+
   it('skips missing files', () => {
-    expect(resolveEnv({}, [join(dir, 'nope')])).toEqual({});
+    expect(resolveEnv({}, [{ path: join(dir, 'nope'), repo: false }])).toEqual({});
   });
 
   it('saveApiKey writes ~/.leash/.env, replacing an old key and keeping other lines', () => {
