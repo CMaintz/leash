@@ -4,6 +4,22 @@ All notable changes to this project are documented here. Format: [Keep a Changel
 
 ## [Unreleased]
 
+## [0.15.0] - 2026-10-10
+
+### Changed
+
+- One judging pipeline: the per-edit check and `calibrate` now go through `checkTurn` (new `phase` option), so they get the same ignore list, binary skip, chunking and deadline as the turn check. A failed call in `calibrate` skips that file instead of aborting the run.
+- The CLI is split by job: `cli-turn.ts` (check, audit, hooks), `cli-rubric.ts` (compile, report, guard, session), `cli-setup.ts` (login, init, uninstall); `cli.ts` only dispatches. `leash help` lists every command.
+- The turn deadline counts from process start, and reading the hook payload gives up after 5s, so a stdin that never closes can't eat the budget.
+
+### Fixed
+
+- `check --json` printed nothing but a stderr line for an invalid rubric; it now always prints the JSON result (`ran: false`).
+
+### Tests
+
+- Spawn-level CLI tests run the built binary in a throwaway repo against a mock Jev server: the hook's block output and exit 0, fail-open with no key or a dead server, subdirectory sessions, `guard` on a deleted rubric, `init` on a broken settings file, and `check --json` on a broken rubric.
+
 ## [0.14.2] - 2026-10-10
 
 ### Fixed

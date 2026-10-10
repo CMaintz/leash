@@ -1,3 +1,4 @@
+import { PassThrough } from 'node:stream';
 import { join, sep } from 'node:path';
 import { Readable } from 'node:stream';
 import { describe, expect, it } from 'vitest';
@@ -82,5 +83,15 @@ describe('readHookInput', () => {
 
   it('tolerates an empty pipe', async () => {
     expect(await readHookInput(Readable.from(['']))).toEqual({});
+  });
+});
+
+describe('readHookInput deadline', () => {
+  it('gives up on a stdin that never closes and keeps what arrived', async () => {
+    const stream = new PassThrough();
+    stream.write('{"cwd":"/x"');
+    const started = Date.now();
+    expect(await readHookInput(stream, 50)).toEqual({}); // partial JSON parses as nothing
+    expect(Date.now() - started).toBeLessThan(2000);
   });
 });
