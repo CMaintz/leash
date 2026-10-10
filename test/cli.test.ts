@@ -40,7 +40,9 @@ const git = (...args: string[]): string => execFileSync('git', args, { cwd: repo
 const withJev = (url = baseUrl): Record<string, string> => ({ JEV_API_KEY: 'k', TYPESAFE_AI_BASE_URL: url });
 
 beforeAll(() => {
-  build = mkdtempSync(join(tmpdir(), 'leash-build-'));
+  // Built under node_modules so the binary resolves its runtime deps (@cmaintz/jev-core).
+  mkdirSync(join(ROOT, 'node_modules', '.cache'), { recursive: true });
+  build = mkdtempSync(join(ROOT, 'node_modules', '.cache', 'leash-build-'));
   execFileSync(process.execPath, [
     join(ROOT, 'node_modules/typescript/bin/tsc'),
     '-p',
