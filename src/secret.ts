@@ -18,9 +18,19 @@ export function applyKeystrokes(value: string, chunk: string): SecretInput {
   return { value: next, done: false, cancelled: false };
 }
 
+// Git Bash (mintty) gives node a pipe, not a terminal, so there is no masked prompt: typed
+// input would show and only Ctrl-D ends it. Say so before waiting on it.
+const MINTTY_HINT =
+  'leash: Git Bash has no hidden-input prompt. Pipe the key in instead ' +
+  '(`cat key.txt | leash login`, or from PowerShell `Get-Clipboard | leash login`),\n' +
+  'or type it here and press Enter, then Ctrl-D (it will be visible).\n';
+
 /** The secret from stdin: masked prompt on a TTY, else everything piped in. */
 export async function readSecret(prompt: string, stdin: NodeJS.ReadStream = process.stdin): Promise<string> {
-  if (!stdin.isTTY) return (await readAll(stdin)).trim();
+  if (!stdin.isTTY) {
+    if (process.env.MSYSTEM) process.stderr.write(MINTTY_HINT);
+    return (await readAll(stdin)).trim();
+  }
   process.stdout.write(prompt);
   return readMasked(stdin);
 }

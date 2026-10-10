@@ -10,6 +10,11 @@ export function positional(): string | undefined {
   return process.argv.slice(3).find((arg) => !arg.startsWith('--'));
 }
 
+/** Every non-flag argument after the command (e.g. `audit --all <paths...>`). */
+export function positionals(): string[] {
+  return process.argv.slice(3).filter((arg) => !arg.startsWith('--'));
+}
+
 export function targetFlag(): Target {
   if (hasFlag('--opencode')) return 'opencode';
   return hasFlag('--codex') ? 'codex' : 'claude';

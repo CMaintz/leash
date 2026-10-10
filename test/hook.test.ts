@@ -1,7 +1,16 @@
+import { PassThrough } from 'node:stream';
 import { join, sep } from 'node:path';
 import { Readable } from 'node:stream';
 import { describe, expect, it } from 'vitest';
-import { editHookOutput, readHookInput, repoRelative, stopDecision, stopDecisionOnce } from '../src/hook.js';
+import {
+  editedFiles,
+  editHookOutput,
+  isRepairPrompt,
+  readHookInput,
+  repoRelative,
+  stopDecision,
+  stopDecisionOnce,
+} from '../src/hook.js';
 import type { Finding } from '../src/schema.js';
 
 const finding = (band: Finding['band'], id = 'r'): Finding => ({
@@ -74,13 +83,61 @@ describe('repoRelative', () => {
 });
 
 describe('readHookInput', () => {
-  it('parses Codex stop_hook_active so the runner can skip a re-block', async () => {
-    const input = await readHookInput(Readable.from(['{"cwd":"/x","stop_hook_active":true}']));
-    expect(input.stop_hook_active).toBe(true);
-    expect(input.cwd).toBe('/x');
+  it('parses the cwd and session id the runners use', async () => {
+    const input = await readHookInput(Readable.from(['{"cwd":"/x","session_id":"s1","stop_hook_active":true}']));
+    expect(input).toMatchObject({ cwd: '/x', session_id: 's1' });
   });
 
+  it('reads nothing from a terminal, so running a hook by hand never waits', async () => {
+    const tty = Object.assign(Readable.from([]), { isTTY: true });
+    expect(await readHookInput(tty, 60_000)).toEqual({});
+  });
+});
+
+describe('editedFiles', () => {
+  it("takes Claude's file_path", () => {
+    expect(editedFiles({ tool_input: { file_path: '/r/src/a.ts' } })).toEqual(['/r/src/a.ts']);
+  });
+
+  it('takes every added, updated or moved file from a Codex apply_patch', () => {
+    const command = [
+      '*** Begin Patch',
+      '*** Update File: src/a.ts',
+      '@@',
+      '-x',
+      '+y',
+      '*** Add File: src/new.ts',
+      '+z',
+      '*** Delete File: src/gone.ts',
+      '*** Update File: src/old.ts',
+      '*** Move to: src/moved.ts',
+      '*** End Patch',
+    ].join('\n');
+    expect(editedFiles({ tool_input: { command } })).toEqual(['src/a.ts', 'src/new.ts', 'src/old.ts', 'src/moved.ts']);
+  });
+});
+
+describe('isRepairPrompt', () => {
+  it("recognises Leash's own block reason coming back as a prompt", () => {
+    const reason = stopDecision([{ ruleId: 'r', file: 'a.ts', band: 'repair', probability: 0.9 } as Finding]).reason;
+    expect(isRepairPrompt({ prompt: reason! })).toBe(true);
+    expect(isRepairPrompt({ prompt: 'Leash is great, add a feature' })).toBe(false);
+    expect(isRepairPrompt({})).toBe(false);
+  });
+});
+
+describe('readHookInput edge cases', () => {
   it('tolerates an empty pipe', async () => {
     expect(await readHookInput(Readable.from(['']))).toEqual({});
+  });
+});
+
+describe('readHookInput deadline', () => {
+  it('gives up on a stdin that never closes and keeps what arrived', async () => {
+    const stream = new PassThrough();
+    stream.write('{"cwd":"/x"');
+    const started = Date.now();
+    expect(await readHookInput(stream, 50)).toEqual({}); // partial JSON parses as nothing
+    expect(Date.now() - started).toBeLessThan(2000);
   });
 });

@@ -82,12 +82,25 @@ describe('turn snapshots (real git repo)', () => {
     expect(existsSync(join('.leash', 'turn-base'))).toBe(true); // a user's file is never deleted
   });
 
+  it('keeps a separate turn per session, so one session never resets another', () => {
+    writeTurnBase('session-a');
+    const a = readTurnBase('session-a');
+    writeFileSync('tracked.ts', 'export const a = 3;\n');
+    writeTurnBase('session-b');
+    expect(readTurnBase('session-a')).toBe(a);
+    expect(readTurnBase('session-b')).not.toBe(a);
+    recordBlocked(a, ['r::x'], 'session-a');
+    expect(readBlocked(a, 'session-b')).toEqual([]);
+    expect(readBlocked(a, 'session-a')).toEqual(['r::x']);
+    expect(readTurnBase('../../evil')).toBe('HEAD'); // ids are sanitized into a file name
+  });
+
   it('treats a file name as data, never as shell', () => {
     writeTurnBase();
     // Legal on Windows too; under the old `sh -c` both substitutions ran on POSIX.
     const name = '$(touch inj) `touch inj2` & x.ts';
     writeFileSync(name, 'x\n');
-    expect(diffToWorktree(readTurnBase(), name)).toContain('x.ts');
+    expect(diffToWorktree(readTurnBase(), [name])).toContain('x.ts');
     expect(existsSync('inj') || existsSync('inj2')).toBe(false);
   });
 });

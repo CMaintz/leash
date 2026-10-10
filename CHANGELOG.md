@@ -8,9 +8,41 @@ All notable changes to this project are documented here. Format: [Keep a Changel
 
 - **`leash calibrate --from thresholds.json`**: writes each rule's `repairAt`/`noteAt` from a jev-eval measurement (its `yesAt` section, jev-eval 1.2.0). The strictest precision target's threshold becomes `repairAt`, the loosest `noteAt`; a single target sets `repairAt` only. Refuses non-version-1 files, warns on a model mismatch and on a question reworded since it was measured. `--dry-run` prints without writing. New exports: `parseYesAtThresholds`, `planBands`, `applyBands`, `wireQuestion`.
 
+## [0.16.0] - 2026-10-10
+
+### Added
+
+- **`leash audit --all [paths...]`** judges whole files as if just written, so existing debt in files no diff touches can be baselined (the spec's `audit <paths>`).
+- `leash check` lists findings the baseline hides as `[baselined]`, so a fresh break of an accepted rule in an accepted file is still visible to a person.
+- `leash compile` warns when a scope glob matches no file in the repo (often a root-only `*.ts` meant as `**/*.ts`). New export: `deadScopes`.
+- **Codex per-edit checks.** Codex's `Edit|Write` matcher catches `apply_patch`, but its payload has the patch text instead of a file path, so the edit hook skipped every Codex edit. It now judges each file the patch adds, updates or moves to. New export: `editedFiles`.
+
+### Fixed
+
+- Turn state (snapshot and block record) is kept per session (`session_id`), so two agent sessions in one checkout no longer reset each other's turn. Stale per-session files are pruned after a week.
+- When Codex re-submits Leash's block reason as a prompt, the snapshot is kept, so the repair is judged against the turn's real start.
+- Hooks move to the repo of the payload's `cwd`, and Codex patch paths resolve against it.
+- Building the snapshot tree is capped at 25s, so a huge untracked tree fails with a logged miss before the host's 30s kill.
+- Running a hook by hand at a terminal no longer waits for stdin.
+- On Windows, `leash login` restricts `~/.leash/.env` to the current user with `icacls`; on Git Bash it explains that input can't be hidden there.
+
+## [0.15.0] - 2026-10-10
+
 ### Changed
 
 - **Jev client from `@cmaintz/jev-core`.** `src/provider.ts` is now a thin layer over the published client instead of its own copy, keeping Leash's exports, the 20 s default timeout, `LEASH_TIMEOUT_MS` and the turn-deadline `signal`. Errors are now `JevError` subclasses (same messages), and malformed answers are dropped as "no answer" instead of passed through. First runtime dependency; requires Node 20.3 or newer.
+- One judging pipeline: the per-edit check and `calibrate` now go through `checkTurn` (new `phase` option), so they get the same ignore list, binary skip, chunking and deadline as the turn check. A failed call in `calibrate` skips that file instead of aborting the run.
+- The CLI is split by job: `cli-turn.ts` (check, audit, hooks), `cli-rubric.ts` (compile, report, guard, session), `cli-setup.ts` (login, init, uninstall); `cli.ts` only dispatches. `leash help` lists every command.
+- The turn deadline counts from process start, and reading the hook payload gives up after 5s, so a stdin that never closes can't eat the budget.
+
+### Fixed
+
+- `check --json` printed nothing but a stderr line for an invalid rubric; it now always prints the JSON result (`ran: false`).
+- A tracked edit of the same size made within a second of the last index write could be missed by the turn snapshot: the scratch index copy got a fresh mtime, which defeats git's racy-entry check. The copy now keeps the real index's mtime.
+
+### Tests
+
+- Spawn-level CLI tests run the built binary in a throwaway repo against a mock Jev server: the hook's block output and exit 0, fail-open with no key or a dead server, subdirectory sessions, `guard` on a deleted rubric, `init` on a broken settings file, and `check --json` on a broken rubric.
 
 ## [0.14.2] - 2026-10-10
 

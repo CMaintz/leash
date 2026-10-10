@@ -1,13 +1,15 @@
-// Orchestration: run the turn-check over a diff. One batched Jev call per changed file
-// (all in-scope rules as questions; an oversized patch is chunked and the answers
-// merged), files judged with bounded concurrency, then band and subtract the ratchet
-// baseline. A failing call skips only its own file - the rest of the turn is still judged.
+// Orchestration: the one path that asks Jev about a diff (the turn check, the per-edit
+// check, calibrate and bench all come through here, so they share the same filters,
+// chunking and deadline). One batched Jev call per changed file (all in-scope rules as
+// questions; an oversized patch is chunked and the answers merged), files judged with
+// bounded concurrency, then band and subtract the ratchet baseline. A failing call
+// skips only its own file - the rest of the turn is still judged.
 
 import type { FileDiff } from './diff.js';
 import { findingsForFile, isIgnored, newFindings, questionsForFile } from './engine.js';
 import { chunkPatch, isBinaryPatch, isLeashPath, MAX_PATCH_CHARS, mergeAnswers } from './patch.js';
 import type { Answer, JevProvider, Question } from './provider.js';
-import type { Finding, Rubric } from './schema.js';
+import type { Finding, Phase, Rubric } from './schema.js';
 
 /** A file the check could not judge (the call failed), with the reason. */
 export interface Skipped {
@@ -31,6 +33,8 @@ export interface CheckOptions {
   maxPatchChars?: number;
   /** The turn deadline: once aborted, unjudged files are skipped and in-flight calls end. */
   signal?: AbortSignal;
+  /** Which rules to ask (default 'turn'); the per-edit check passes 'edit'. */
+  phase?: Phase;
 }
 
 /** Whole-turn budget default (LEASH_DEADLINE_MS): the Stop hook must answer promptly. */
@@ -63,13 +67,14 @@ async function checkFile(
 ): Promise<FileResult> {
   const { file, patch } = diff;
   if (isLeashPath(file) || isIgnored(file) || isBinaryPatch(patch)) return { findings: [] };
-  const questions = questionsForFile(rubric, file);
+  const { signal, phase = 'turn' } = options;
+  const questions = questionsForFile(rubric, file, phase);
   if (Object.keys(questions).length === 0) return { findings: [] };
-  const { signal } = options;
   try {
     signal?.throwIfAborted();
     const chunks = chunkPatch(patch, options.maxPatchChars ?? MAX_PATCH_CHARS);
-    return { findings: findingsForFile(rubric, file, await judgeChunks(provider, file, chunks, questions, signal)) };
+    const answers = await judgeChunks(provider, file, chunks, questions, signal);
+    return { findings: findingsForFile(rubric, file, answers, phase) };
   } catch (err) {
     const reason = signal?.aborted ? DEADLINE_REASON : err instanceof Error ? err.message : String(err);
     return { findings: [], skipped: { file, reason } };

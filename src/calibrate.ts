@@ -3,7 +3,7 @@
 // (reword or remove). Pure reporting plus a thin Jev orchestration over commit diffs.
 
 import type { FileDiff } from './diff.js';
-import { findingsForFile, questionsForFile } from './engine.js';
+import { checkTurn } from './check.js';
 import type { JevProvider } from './provider.js';
 import type { Rubric } from './schema.js';
 
@@ -49,14 +49,9 @@ function zeroedHits(rubric: Rubric): Record<string, number> {
   return hits;
 }
 
-/** The set of rules that fired in at least one file of this commit. */
+/** The set of rules that fired in at least one file of this commit. A file whose call
+ * fails is skipped (as in the turn check) rather than aborting the whole calibration. */
 async function firedRules(provider: JevProvider, rubric: Rubric, files: FileDiff[]): Promise<Set<string>> {
-  const fired = new Set<string>();
-  for (const { file, patch } of files) {
-    const questions = questionsForFile(rubric, file);
-    if (Object.keys(questions).length === 0) continue;
-    const { answers } = await provider.evaluate({ state: { file, diff: patch }, questions });
-    for (const finding of findingsForFile(rubric, file, answers)) fired.add(finding.ruleId);
-  }
-  return fired;
+  const { findings } = await checkTurn(provider, rubric, files);
+  return new Set(findings.map((finding) => finding.ruleId));
 }
