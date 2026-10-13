@@ -2,7 +2,7 @@
 # Copy to a repo's mise.toml and adjust the tool versions. See CONTRACT.md.
 
 [tools]
-node = "22.14.0" # pin to whatever the repo actually uses
+node = "22.15.0" # pin to whatever the repo actually uses
 
 [env]
 # habit-hooks (structural-smell detector) is a pinned, mise-managed dependency, so the
