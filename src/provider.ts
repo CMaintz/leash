@@ -45,7 +45,7 @@ export class TypeSafeProvider implements JevProvider {
     baseUrl = 'https://api.typesafe.ai/v1',
     timeoutMs = DEFAULT_TIMEOUT_MS,
   ) {
-    this.core = new CoreTypeSafeProvider(apiKey, model, baseUrl, timeoutMs);
+    this.core = new CoreTypeSafeProvider({ apiKey, model, baseUrl, timeoutMs });
   }
 
   evaluate({ signal, ...req }: JevRequest): Promise<JevResponse> {
