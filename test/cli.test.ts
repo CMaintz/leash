@@ -1,5 +1,5 @@
 import { execFile, execFileSync } from 'node:child_process';
-import { copyFileSync, mkdirSync, mkdtempSync, readFileSync, rmSync, writeFileSync } from 'node:fs';
+import { copyFileSync, existsSync, mkdirSync, mkdtempSync, readFileSync, rmSync, writeFileSync } from 'node:fs';
 import { createServer, type Server } from 'node:http';
 import type { AddressInfo } from 'node:net';
 import { tmpdir } from 'node:os';
@@ -192,5 +192,15 @@ describe('leash mcp (stdio)', () => {
     } finally {
       await client.close();
     }
+  });
+});
+
+describe('init --mcp', () => {
+  it('writes the project .mcp.json entry and installs no hooks', async () => {
+    const run = await leash(['init', '--mcp', '--project']);
+    expect(run.code).toBe(0);
+    const config = JSON.parse(readFileSync(join(repo, '.mcp.json'), 'utf8')) as { mcpServers: object };
+    expect(config.mcpServers).toHaveProperty('leash');
+    expect(existsSync(join(repo, '.claude', 'settings.json'))).toBe(false);
   });
 });

@@ -313,6 +313,14 @@ Results are advice, not a verdict (see [Honest limits](#honest-limits)): Jev is 
 accurate, and the edit phase is noisy. The tool descriptions say so, for clients that
 have no banding of their own.
 
+```
+leash init --mcp --project       # Claude Code: adds leash to this repo's .mcp.json
+leash init --mcp                 # Claude Code, every project: prints the `claude mcp add` command
+leash init --mcp --codex         # Codex: adds [mcp_servers.leash] to ~/.codex/config.toml
+```
+
+Each also prints the entry for other hosts.
+
 **Cursor** (`.cursor/mcp.json` in the repo, or `~/.cursor/mcp.json`):
 
 ```json
@@ -335,9 +343,10 @@ name the repo):
 ```
 
 On native Windows, use `"command": "cmd"` with `"args": ["/c", "npx", ...]`: `npx` is a
-`.cmd` shim that hosts can't start without a shell. Without a repo argument the server
-judges the repo it was started in. Each request gets the full `LEASH_DEADLINE_MS` budget
-(default 60 s), and a cancelled request stops its Jev calls.
+`.cmd` shim that hosts can't start without a shell (`leash init --mcp` writes it that way
+there). Without a repo argument the server judges the repo it was started in. Each request
+gets the full `LEASH_DEADLINE_MS` budget (default 60 s), and a cancelled request stops its
+Jev calls.
 
 ## Machine-readable checks
 

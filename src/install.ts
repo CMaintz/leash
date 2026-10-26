@@ -118,6 +118,11 @@ export function hostConfigPath(host: Host, project: boolean): string {
   return project ? join(dir, file) : join(homedir(), dir, file);
 }
 
+/** Codex's own config.toml (where its MCP servers live), beside its hook config. */
+export function codexConfigTomlPath(project: boolean): string {
+  return join(dirname(hostConfigPath('codex', project)), 'config.toml');
+}
+
 /** The host config at `path`; {} when absent. Throws on a file that won't parse, so
  * init/uninstall stop instead of overwriting the user's settings with Leash's alone. */
 export function loadSettings(path: string): ClaudeSettings {

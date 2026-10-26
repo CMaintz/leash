@@ -12,6 +12,7 @@ import { compile, guard, report, session } from './cli-rubric.js';
 import { install, login, uninstall } from './cli-setup.js';
 import { projectRoot } from './cli-store.js';
 import { audit, check, editCheck, editHook, hook, snapshot } from './cli-turn.js';
+import { installMcp } from './cli-mcp-setup.js';
 import { logMiss } from './misses.js';
 
 type Command = () => Promise<void> | void;
@@ -26,7 +27,8 @@ const HELP = `leash <command> [arg]
   calibrate flags: --sample N; --from <thresholds.json> [--dry-run] (bands from jev-eval, no Jev call)
   init/uninstall flags: --project (this repo, default global); --codex or --opencode
     (default Claude Code); --edit-phase (also wire the per-edit check);
-    --standalone (install hooks even where Foundry drives Leash)`;
+    --standalone (install hooks even where Foundry drives Leash);
+    --mcp (wire the MCP server instead of hooks, and print snippets for other hosts)`;
 
 function commands(arg: string | undefined, launchedFrom: string): Record<string, Command> {
   const project = hasFlag('--project');
@@ -37,7 +39,7 @@ function commands(arg: string | undefined, launchedFrom: string): Record<string,
     guard: () => guard(arg),
     // Loaded on demand so the hooks, which run every turn, never load the MCP SDK.
     mcp: async () => (await import('./cli-mcp.js')).serveMcp(arg && resolve(launchedFrom, arg), packageVersion()),
-    init: () => install(project, targetFlag()),
+    init: () => (hasFlag('--mcp') ? installMcp(project, targetFlag()) : install(project, targetFlag())),
     uninstall: () => uninstall(project, targetFlag()),
     version: () => console.log(`leash ${packageVersion()}`),
     help: () => console.log(HELP),
