@@ -288,6 +288,57 @@ never resets the turn. It needs `leash` on `PATH` (a global install); if it is m
 the plugin fails open and stays silent. The stale-rubric session nudge is not wired for
 OpenCode; run `leash session` by hand after editing your instruction files.
 
+## MCP server (Cursor, Claude Desktop, any MCP host)
+
+Hosts without an end-of-turn hook (Cursor, Copilot agent mode, Windsurf, Claude Desktop)
+can still use Leash: `leash mcp [repo]` is a stdio MCP server over the same judging. It
+also lets an agent with hooks check a plan or a half-finished change before its turn
+ends, which is cheaper than a repair loop. Where a Stop hook exists it stays the default.
+
+| Tool | What it does |
+|---|---|
+| `check` | Judges a pasted `diff`, or the working tree vs `HEAD` (optionally `paths`), against the committed rubric. `phase`: `turn` (default) or `edit`. Returns `{ actionable, findings, skipped }`: `actionable` minus the baseline, `findings` everything. |
+| `judge_files` | Judges whole files matching `paths` globs, as if just written. Never writes the baseline; accepting debt stays `leash audit`. |
+| `list_rules` | The rubric's rules, or only those whose scope covers `path`. |
+| `explain_rule` | One rule, its source line and recent misses. With `sample: N` it also measures its fire rate over the last N commits (that costs Jev calls). |
+| `jev_judge` | One typed Jev judgment of any `state`: `noul` (yes/no), `choice` (`options`) or `score` (`levels`). Returns `{ answer, probability }`. |
+
+Resources: `leash://rubric` (the rubric file) and `leash://drift` (loosenings vs `HEAD`,
+and instruction files changed since `leash compile`). Prompt: `leash-rubric`, the same
+procedure as the `/leash-rubric` command. Every tool is read-only and fails open: no key,
+no rubric or a failed call comes back as a normal result with a reason in `skipped`,
+never as an error. The key comes from `leash login` (or `JEV_API_KEY`), as for the CLI.
+
+Results are advice, not a verdict (see [Honest limits](#honest-limits)): Jev is about 68%
+accurate, and the edit phase is noisy. The tool descriptions say so, for clients that
+have no banding of their own.
+
+**Cursor** (`.cursor/mcp.json` in the repo, or `~/.cursor/mcp.json`):
+
+```json
+{
+  "mcpServers": {
+    "leash": { "command": "npx", "args": ["-y", "@cmaintz/leash", "mcp", "${workspaceFolder}"] }
+  }
+}
+```
+
+**Claude Desktop** (`claude_desktop_config.json`; it starts servers outside any repo, so
+name the repo):
+
+```json
+{
+  "mcpServers": {
+    "leash": { "command": "npx", "args": ["-y", "@cmaintz/leash", "mcp", "/path/to/your/repo"] }
+  }
+}
+```
+
+On native Windows, use `"command": "cmd"` with `"args": ["/c", "npx", ...]`: `npx` is a
+`.cmd` shim that hosts can't start without a shell. Without a repo argument the server
+judges the repo it was started in. Each request gets the full `LEASH_DEADLINE_MS` budget
+(default 60 s), and a cancelled request stops its Jev calls.
+
 ## Machine-readable checks
 
 `leash check --json` prints one stable JSON object - the contract the OpenCode plugin and
