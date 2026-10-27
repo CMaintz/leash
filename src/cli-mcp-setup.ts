@@ -10,6 +10,8 @@ export function installMcp(project: boolean, host: Target): void {
   printOtherHosts();
 }
 
+// The user-scope config is ~/.claude.json, which Claude Code itself rewrites constantly, so
+// editing it from outside could clobber or be clobbered; print the command instead.
 function installClaudeMcp(project: boolean): void {
   if (!project) return void console.log(`leash: for every Claude Code project, run: ${claudeUserCommand()}`);
   const before = loadSettings('.mcp.json');

@@ -83,6 +83,8 @@ export function createMcpServer(options: McpServerOptions = {}): McpServer {
   return server;
 }
 
+// turnSignal counts from process start, which in a long-lived server would expire every
+// request after the first budget's worth of uptime; each request gets the full budget.
 function deadlineFromThisRequestsStart(cancel: AbortSignal): AbortSignal {
   return AbortSignal.any([cancel, AbortSignal.timeout(deadlineBudgetMs())]);
 }
@@ -208,6 +210,7 @@ function registerResources(server: McpServer): void {
 }
 
 function registerRubricPrompt(server: McpServer): void {
+  // Strip the slash command's frontmatter: it is host metadata, not prompt text.
   const text = RUBRIC_COMMAND.replace(/^---\n[\s\S]*?\n---\n+/, '');
   const config = { description: 'Author or update .leash/rubric.json from the instruction files' };
   server.registerPrompt('leash-rubric', config, () => ({

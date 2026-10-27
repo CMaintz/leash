@@ -50,6 +50,7 @@ function commands(arg: string | undefined, launchedFrom: string): Record<string,
 async function main(): Promise<void> {
   // Every path (.leash/, the git dir, env files) is repo-relative, so a session started
   // in a subdirectory sees the same rubric as one started at the root.
+  // Kept so a relative `leash mcp <repo>` resolves from where the host launched it.
   const launchedFrom = process.cwd();
   process.chdir(projectRoot());
   const table = commands(positional(), launchedFrom);

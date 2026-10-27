@@ -19,6 +19,9 @@ export type ProviderSource = () => JevProvider | null;
 
 const WHOLE_REQUEST = '*';
 
+/** Judges against the rubric and baseline at HEAD, not the working tree the CLI `check`
+ * reads, so an agent's uncommitted edit to either can't loosen the check judging it.
+ * Never throws: Leash fails open, so every failure comes back as a whole-request skip. */
 export async function judgeAgainstCommittedRubric(
   provider: ProviderSource,
   readDiff: () => string,
@@ -40,10 +43,14 @@ export function worktreeDiff(paths: readonly string[] = []): () => string {
   return () => diffToWorktree('HEAD', paths);
 }
 
+/** Diffs the matching files from the empty tree, so each reads as just written and its
+ * existing debt is judged too. */
 export function wholeFilesDiff(globs: readonly string[]): () => string {
   return () => diffToWorktree(emptyTree(), filesMatching(globs.map(repoPath)));
 }
 
+// matchGlob rather than git pathspecs, so a glob selects the same files here as in a rule's
+// scope. No match throws, so a mistyped glob comes back as a skip rather than a clean result.
 function filesMatching(globs: readonly string[]): string[] {
   const files = git(['ls-files', '--cached', '--others', '--exclude-standard']).split('\n').filter(Boolean);
   const matched = files.filter((file) => globs.some((glob) => matchGlob(glob, file)));
@@ -89,8 +96,11 @@ export async function explainRule(
   signal: AbortSignal,
 ): Promise<RuleExplanation> {
   const rule = tryLoadRubric()?.rules.find((r) => r.id === id) ?? null;
+  // The miss log is per run, not per rule, so these are not filtered by id.
   const misses = recentMisses(5);
   if (!rule) return { rule, calibration: null, misses, reason: `no rule "${id}" in ${RUBRIC_PATH}` };
+  // Opt-in: calibrating costs one Jev call per changed file per commit, which an explain
+  // should not spend unasked.
   if (!sample) return { rule, calibration: null, misses };
   const jev = provider();
   if (!jev) return { rule, calibration: null, misses, reason: NO_KEY_REASON };
@@ -114,9 +124,12 @@ async function calibrateRule(
   const calibration = calibrationReport({ [rule.id]: fires }, commits.length)[0]!;
   if (skipped === 0) return { calibration };
   const reason = `${skipped} file(s) could not be judged, so fires is a lower bound`;
+  // A rule that never fired may only have gone unjudged, so it can't be reported dead.
   return { calibration: { ...calibration, dead: false }, reason };
 }
 
+// Not tallyFires: that drops the files it could not judge, which would let a deadline or a
+// failed call pass for a dead rule.
 async function tallyOneRule(
   jev: JevProvider,
   rule: Rule,
