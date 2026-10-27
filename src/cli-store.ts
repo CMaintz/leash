@@ -94,11 +94,15 @@ export function cliProvider(): JevProvider | null {
   return providerFromEnv(leashEnv());
 }
 
-/** Aborts once the turn budget (LEASH_DEADLINE_MS, default 60s) is spent. */
+/** The Jev budget in ms: LEASH_DEADLINE_MS, default 60s. */
+export function deadlineBudgetMs(): number {
+  return positiveMs(leashEnv().LEASH_DEADLINE_MS, DEFAULT_DEADLINE_MS);
+}
+
+/** Aborts once the turn budget (deadlineBudgetMs) is spent. */
 export function turnSignal(): AbortSignal {
   // Counted from process start, so stdin, git and setup time come out of the same budget.
-  const budget = positiveMs(leashEnv().LEASH_DEADLINE_MS, DEFAULT_DEADLINE_MS);
-  return AbortSignal.timeout(Math.max(1, budget - Math.round(performance.now())));
+  return AbortSignal.timeout(Math.max(1, deadlineBudgetMs() - Math.round(performance.now())));
 }
 
 /** The instruction-file stamp `leash compile` recorded, or null when there is none. */

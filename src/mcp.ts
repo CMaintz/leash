@@ -1,10 +1,8 @@
 import { McpServer } from '@modelcontextprotocol/sdk/server/mcp.js';
 import type { CallToolResult } from '@modelcontextprotocol/sdk/types.js';
 import { z } from 'zod';
-import { DEFAULT_DEADLINE_MS, type CheckResult } from './check.js';
-import { cliProvider, projectRoot } from './cli-store.js';
-import { envFiles, resolveEnv } from './env.js';
-import { positiveMs } from './provider.js';
+import type { CheckResult } from './check.js';
+import { cliProvider, deadlineBudgetMs } from './cli-store.js';
 import { RUBRIC_COMMAND } from './commands.js';
 import {
   drift,
@@ -86,8 +84,7 @@ export function createMcpServer(options: McpServerOptions = {}): McpServer {
 }
 
 function deadlineFromThisRequestsStart(cancel: AbortSignal): AbortSignal {
-  const budget = positiveMs(resolveEnv(process.env, envFiles(projectRoot())).LEASH_DEADLINE_MS, DEFAULT_DEADLINE_MS);
-  return AbortSignal.any([cancel, AbortSignal.timeout(budget)]);
+  return AbortSignal.any([cancel, AbortSignal.timeout(deadlineBudgetMs())]);
 }
 
 function registerCheck(server: McpServer, provider: ProviderSource): void {

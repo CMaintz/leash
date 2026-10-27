@@ -3,8 +3,10 @@ import { RUBRIC_PATH } from './cli-store.js';
 import { logMiss, recentMisses } from './misses.js';
 import { type Finding, type Rubric } from './schema.js';
 
+export const NO_KEY_REASON = 'no JEV_API_KEY (run `leash login`)';
+
 export function skipReason(rubric: Rubric | null): string {
-  return rubric ? 'no JEV_API_KEY (run `leash login`)' : `no rubric at ${RUBRIC_PATH}`;
+  return rubric ? NO_KEY_REASON : `no rubric at ${RUBRIC_PATH}`;
 }
 
 export function skip(rubric: Rubric | null, provider: unknown): void {

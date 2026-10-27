@@ -2,7 +2,7 @@ import { readFileSync } from 'node:fs';
 import { answerConfidence, choice, noul, score, validateQuestions } from '@cmaintz/jev-core';
 import { calibrationReport, type RuleCalibration } from './calibrate.js';
 import { commitDiffs } from './cli-calibrate.js';
-import { skipReason } from './cli-output.js';
+import { NO_KEY_REASON, skipReason } from './cli-output.js';
 import { loadBaselineAt, loadRubricAt, loadSources, RUBRIC_PATH, tryLoadRubric, turnRubric } from './cli-store.js';
 import { checkTurn, type CheckResult } from './check.js';
 import { parseDiff, type FileDiff } from './diff.js';
@@ -18,7 +18,6 @@ import { instructionFiles, NO_STAMP_NUDGE, stampSources, staleNudge, staleSource
 export type ProviderSource = () => JevProvider | null;
 
 const WHOLE_REQUEST = '*';
-const NO_KEY_REASON = 'no JEV_API_KEY (run `leash login`)';
 
 export async function judgeAgainstCommittedRubric(
   provider: ProviderSource,
