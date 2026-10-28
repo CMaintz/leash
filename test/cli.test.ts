@@ -1,9 +1,11 @@
 import { execFile, execFileSync } from 'node:child_process';
-import { copyFileSync, mkdirSync, mkdtempSync, readFileSync, rmSync, writeFileSync } from 'node:fs';
+import { copyFileSync, existsSync, mkdirSync, mkdtempSync, readFileSync, rmSync, writeFileSync } from 'node:fs';
 import { createServer, type Server } from 'node:http';
 import type { AddressInfo } from 'node:net';
 import { tmpdir } from 'node:os';
 import { join, resolve } from 'node:path';
+import { Client } from '@modelcontextprotocol/sdk/client/index.js';
+import { getDefaultEnvironment, StdioClientTransport } from '@modelcontextprotocol/sdk/client/stdio.js';
 import { afterAll, beforeAll, beforeEach, describe, expect, it } from 'vitest';
 
 // The CLI contract, end to end: build once, spawn the real binary in a throwaway repo
@@ -167,5 +169,38 @@ describe('Codex and multi-session flows', () => {
     const command = '*** Begin Patch\n*** Update File: src/a.ts\n@@\n-a\n+changed\n*** End Patch';
     const run = await leash(['edit-hook'], withJev(), payload({ tool_name: 'apply_patch', tool_input: { command } }));
     expect(JSON.parse(run.stdout).hookSpecificOutput.additionalContext).toContain('src/a.ts');
+  });
+});
+
+describe('leash mcp (stdio)', () => {
+  it('serves the repo given as an argument, whatever cwd the host starts it in', async () => {
+    writeFileSync(join(repo, 'src', 'b.ts'), 'b\n');
+    const home = join(repo, '.home');
+    const transport = new StdioClientTransport({
+      command: process.execPath,
+      args: [join(build, 'dist', 'cli.js'), 'mcp', repo],
+      cwd: tmpdir(),
+      env: { ...getDefaultEnvironment(), HOME: home, USERPROFILE: home, ...withJev() },
+      stderr: 'ignore',
+    });
+    const client = new Client({ name: 'test', version: '0' });
+    await client.connect(transport);
+    try {
+      const result = await client.callTool({ name: 'check', arguments: {} });
+      const { actionable } = result.structuredContent as { actionable: { file: string }[] };
+      expect(actionable.map((f) => f.file)).toEqual(['src/b.ts']);
+    } finally {
+      await client.close();
+    }
+  });
+});
+
+describe('init --mcp', () => {
+  it('writes the project .mcp.json entry and installs no hooks', async () => {
+    const run = await leash(['init', '--mcp', '--project']);
+    expect(run.code).toBe(0);
+    const config = JSON.parse(readFileSync(join(repo, '.mcp.json'), 'utf8')) as { mcpServers: object };
+    expect(config.mcpServers).toHaveProperty('leash');
+    expect(existsSync(join(repo, '.claude', 'settings.json'))).toBe(false);
   });
 });

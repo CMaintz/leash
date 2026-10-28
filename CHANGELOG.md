@@ -4,6 +4,12 @@ All notable changes to this project are documented here. Format: [Keep a Changel
 
 ## [Unreleased]
 
+### Added
+
+- **`leash mcp [repo]`**, a stdio MCP server for hosts without an end-of-turn hook (Cursor, Claude Desktop, Copilot, Windsurf) and for checking mid-task. Tools: `check`, `judge_files`, `list_rules`, `explain_rule`, `jev_judge`; resources `leash://rubric` and `leash://drift`; prompt `leash-rubric`. Read-only and fail-open: no key, no rubric or a failed Jev call comes back as `skipped`, never an error. `check` and `judge_files` use the rubric and baseline at `HEAD`, so an uncommitted rubric edit can't loosen its own check.
+- **`leash init --mcp`** wires the server: Claude Code's project `.mcp.json`, Codex's `config.toml`, and a printed entry for every other host.
+- New dependencies: `@modelcontextprotocol/sdk` and `zod`, loaded only by `leash mcp`.
+
 ## [0.17.0] - 2026-10-26
 
 ### Added

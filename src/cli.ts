@@ -4,6 +4,7 @@
 // (login/init/uninstall).
 
 import { createRequire } from 'node:module';
+import { resolve } from 'node:path';
 import { hasFlag, positional, targetFlag } from './cli-args.js';
 import { bench } from './cli-bench.js';
 import { calibrate } from './cli-calibrate.js';
@@ -11,6 +12,7 @@ import { compile, guard, report, session } from './cli-rubric.js';
 import { install, login, uninstall } from './cli-setup.js';
 import { projectRoot } from './cli-store.js';
 import { audit, check, editCheck, editHook, hook, snapshot } from './cli-turn.js';
+import { installMcp } from './cli-mcp-setup.js';
 import { logMiss } from './misses.js';
 
 type Command = () => Promise<void> | void;
@@ -20,20 +22,24 @@ const HELP = `leash <command> [arg]
   rubric:  compile | report | guard [baseRef] | calibrate [--sample N] | bench [--sample N]
   judge:   check [baseRef] | audit [baseRef] | edit-check <file>
   hooks:   snapshot | hook | session | edit-hook   (run by the host agent)
+  mcp:     mcp [repo]   (MCP server over stdio, for hosts without hooks)
   check flags: --turn (diff since the turn snapshot), --json (machine-readable result)
   calibrate flags: --sample N; --from <thresholds.json> [--dry-run] (bands from jev-eval, no Jev call)
   init/uninstall flags: --project (this repo, default global); --codex or --opencode
     (default Claude Code); --edit-phase (also wire the per-edit check);
-    --standalone (install hooks even where Foundry drives Leash)`;
+    --standalone (install hooks even where Foundry drives Leash);
+    --mcp (wire the MCP server instead of hooks, and print snippets for other hosts)`;
 
-function commands(arg: string | undefined): Record<string, Command> {
+function commands(arg: string | undefined, launchedFrom: string): Record<string, Command> {
   const project = hasFlag('--project');
   return {
     check: () => check(arg),
     audit: () => audit(arg),
     'edit-check': () => editCheck(arg),
     guard: () => guard(arg),
-    init: () => install(project, targetFlag()),
+    // Loaded on demand so the hooks, which run every turn, never load the MCP SDK.
+    mcp: async () => (await import('./cli-mcp.js')).serveMcp(arg && resolve(launchedFrom, arg), packageVersion()),
+    init: () => (hasFlag('--mcp') ? installMcp(project, targetFlag()) : install(project, targetFlag())),
     uninstall: () => uninstall(project, targetFlag()),
     version: () => console.log(`leash ${packageVersion()}`),
     help: () => console.log(HELP),
@@ -44,8 +50,10 @@ function commands(arg: string | undefined): Record<string, Command> {
 async function main(): Promise<void> {
   // Every path (.leash/, the git dir, env files) is repo-relative, so a session started
   // in a subdirectory sees the same rubric as one started at the root.
+  // Kept so a relative `leash mcp <repo>` resolves from where the host launched it.
+  const launchedFrom = process.cwd();
   process.chdir(projectRoot());
-  const table = commands(positional());
+  const table = commands(positional(), launchedFrom);
   await (table[process.argv[2] ?? 'help'] ?? table.help)!();
 }
 

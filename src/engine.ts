@@ -105,7 +105,8 @@ export function isIgnored(file: string, ignore: readonly string[] = DEFAULT_IGNO
   return ignore.some((glob) => matchGlob(glob, file));
 }
 
-function inScope(scope: string[], file: string): boolean {
+/** True when `file` is in a rule's `scope` (an empty scope means every file). */
+export function inScope(scope: readonly string[], file: string): boolean {
   return scope.length === 0 || scope.some((glob) => matchGlob(glob, file));
 }
 
